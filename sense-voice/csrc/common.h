@@ -1,0 +1,422 @@
+//
+// Created by lovemefan on 2024/7/19.
+//
+
+#ifndef SENSEVOICE_CPP_COMMON_H
+#define SENSEVOICE_CPP_COMMON_H
+
+#include <cstdint>
+#include <string>
+#include <map>
+#include <ggml.h>
+#include <ggml-alloc.h>
+
+#ifdef GGML_USE_CUDA
+#include "ggml-cuda.h"
+#endif
+
+#include "sense-voice-frontend.h"
+
+#ifdef __GNUC__
+#define SENSEVOICE_DEPRECATED(func, hint) func __attribute__((deprecated(hint)))
+#elif defined(_MSC_VER)
+#define SENSEVOICE_DEPRECATED(func, hint) __declspec(deprecated(hint)) func
+#else
+#define SENSEVOICE_DEPRECATED(func, hint) func
+#endif
+
+#ifdef SENSEVOICE_SHARED
+#ifdef _WIN32
+#ifdef SENSEVOICE_BUILD
+#define SENSEVOICE_API __declspec(dllexport)
+#else
+#define SENSEVOICE_API __declspec(dllimport)
+#endif
+#else
+#define SENSEVOICE_API __attribute__((visibility("default")))
+#endif
+#else
+#define SENSEVOICE_API
+#endif
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#if defined(_MSC_VER)
+#pragma warning(disable : 4244 4267)  // possible loss of data
+#endif
+
+#if defined(GGML_BIG_ENDIAN)
+#include <bit>
+#include <math.h>
+#include "ggml-alloc.h"
+#include "ggml-backend.h"
+
+template <typename T>
+static T byteswap(T value) {
+    return std::byteswap(value);
+}
+
+template <>
+float byteswap(float value) {
+    return std::bit_cast<float>(byteswap(std::bit_cast<std::uint32_t>(value)));
+}
+
+template <typename T>
+static void byteswap_tensor_data(ggml_tensor *tensor) {
+    T *datum = reinterpret_cast<T *>(tensor->data);
+    for (int i = 0; i < ggml_nelements(tensor); i++) {
+        datum[i] = byteswap(datum[i]);
+    }
+}
+
+static void byteswap_tensor(ggml_tensor *tensor) {
+    switch (tensor->type) {
+        case GGML_TYPE_I16: {
+            byteswap_tensor_data<int16_t>(tensor);
+            break;
+        }
+        case GGML_TYPE_F16: {
+            byteswap_tensor_data<ggml_fp16_t>(tensor);
+            break;
+        }
+        case GGML_TYPE_I32: {
+            byteswap_tensor_data<int32_t>(tensor);
+            break;
+        }
+        case GGML_TYPE_F32: {
+            byteswap_tensor_data<float>(tensor);
+            break;
+        }
+        default: {  // GML_TYPE_I8
+            break;
+        }
+    }
+}
+
+#define BYTESWAP_VALUE(d) d = byteswap(d)
+#define BYTESWAP_FILTERS(f)      \
+  do {                           \
+    for (auto &datum : f.data) { \
+      datum = byteswap(datum);   \
+    }                            \
+  } while (0)
+#define BYTESWAP_TENSOR(t) \
+  do {                     \
+    byteswap_tensor(t);    \
+  } while (0)
+#else
+#define BYTESWAP_VALUE(d) \
+  do {                    \
+  } while (0)
+#define BYTESWAP_FILTERS(f) \
+  do {                      \
+  } while (0)
+#define BYTESWAP_TENSOR(t) \
+  do {                     \
+  } while (0)
+#endif
+
+#define SENSEVOICE_MAX_NODES 4096
+
+// available whisper models
+enum e_model {
+    MODEL_SMALL,
+    MODEL_LARGE,
+};
+
+struct sense_voice_encoder;
+struct sense_voice_decoder;
+
+static const std::map<std::string, std::pair<int, std::string>> g_lang = {
+        { "auto",  { 0,  "auto",         } },
+        { "zh",  { 3,  "chinese",         } },
+        { "en",  { 4,  "english",          } },
+        { "yue",  { 7,  "cantonese",         } },
+        { "ja",  { 11,  "japanese",         } },
+        { "ko",  { 12,  "korean",          } },
+        { "nospeech",  { 13,  "nospeech",          } },
+};
+
+struct sense_voice_hparams {
+    int n_vocab = 25055;                // number of vocab
+    int n_max_audio_length = 20000;    //
+    int n_encoder_hidden_state = 512;  // dim of hidden state
+    int n_encoder_linear_units = 2048;
+    int n_encoder_attention_heads = 4;  // head of self attention
+    int n_encoder_layers = 50;          // num block of encoder
+    int n_encoder_0_norm_size = 560;
+    int n_decoder_hidden_state = 512;
+    int n_decoder_linear_units = 2048;
+    int n_decoder_attention_heads = 4;
+    int n_decoder_layers = 14;
+    int fsmn_kernel_size = 11;
+
+    int n_predictor_dim = 512;
+    float predictor_tail_threshold = 0.45;
+
+    // for auto-detection, set to nullptr, "" or "auto"
+    const char * language;
+
+    int n_mels = 80;  // dim of mels
+    std::string window = "hamming";
+    int frame_length = 25;
+    int frame_shift = 10;
+    int lfr_m = 7;
+    int lfr_n = 6;
+    int ftype = 1;
+    float eps = 1e-5f;
+    int n_audio_ctx = 1600;
+};
+
+// replace std::pair by using customized pair struct (reason: std::pair is very
+// slow)
+template <typename A, typename B>
+struct paraformer_pair {
+    A first;
+    B second;
+
+    // Define a constructor that takes two arguments.
+    paraformer_pair(const A &a, const B &b) : first(a), second(b) {}
+    // Define a constructor that takes no argument.
+    paraformer_pair() : first(A()), second(B()) {}
+};
+
+// Available sampling strategies
+enum sense_voice_decoding_strategy {
+    SENSE_VOICE_SAMPLING_GREEDY,
+    SENSE_VOICE_SAMPLING_BEAM_SEARCH,
+};
+
+// ggml_allocr wrapper for PARAFORMER usage
+struct sense_voice_allocr {
+    ggml_gallocr_t alloc = nullptr;
+    std::vector<uint8_t> meta;
+};
+
+struct sense_voice_token_data {
+    int id;   // token id
+    int tid;  // forced timestamp token id
+
+    float p;      // probability of the token
+    float plog;   // log probability of the token
+    float pt;     // probability of the timestamp token
+    float ptsum;  // sum of probabilities of all timestamp tokens
+
+    // token-level timestamp data
+    // do not use if you haven't computed token-level timestamps
+    int64_t t0;  // start time of the token
+    int64_t t1;  //   end time of the token
+
+    float vlen;  // voice length of the token
+};
+
+struct sense_voice_segment {
+    int64_t t0;
+    int64_t t1;
+    std::string text;
+    std::vector<sense_voice_token_data> tokens;
+    bool speaker_turn_next;
+};
+
+struct sense_voice_vocab {
+    using id = int32_t;
+    using token = std::string;
+
+    int n_vocab = 25055;
+
+    std::map<token, id> token_to_id;
+    std::map<id, token> id_to_token;
+
+    id token_eot = 2;
+    id token_sot = 1;
+};
+
+struct sense_voice_state {
+    int64_t t_sample_us = 0;
+    int64_t t_encode_us = 0;
+    int64_t t_decode_us = 0;
+    int64_t t_prompt_us = 0;
+    int64_t t_mel_us = 0;
+
+    int32_t n_sample = 0;  // number of tokens sampled
+    int32_t n_encode = 0;  // number of encoder calls
+    int32_t n_decode =
+            0;  // number of decoder calls with n_tokens == 1 (text-generation)
+    int32_t n_prompt =
+            0;  // number of decoder calls with n_tokens >  1 (prompt encoding)
+    int32_t n_fail_p = 0;  // number of logprob threshold failures
+    int32_t n_fail_h = 0;  // number of entropy threshold failures
+
+    // shared between all decoders
+    sense_voice_feature feature;
+
+    // reusable buffer for `struct ggml_graph_plan.work_data`
+    std::vector<uint8_t> work_buffer;
+
+    ggml_backend_t backend = nullptr;
+
+    // ggml-alloc:
+    // - stores meta info about the intermediate tensors into the `meta` buffers
+    // - stores the actual tensor data into the `data` buffers
+    sense_voice_allocr alloc_encode;
+
+    sense_voice_allocr alloc_decode;
+
+    // result of the encoder
+    struct ggml_tensor *embd_enc = nullptr;
+
+    // decode output (2-dimensional array: [n_tokens][n_vocab])
+    std::vector<float> logits;
+
+    std::vector<sense_voice_segment> result_all;
+    std::vector<int> prompt_past;
+
+    // work container used to avoid memory allocations
+    std::vector<paraformer_pair<double, sense_voice_vocab::id>> logits_id;
+
+    int lang_id = 0;  // english by default
+
+    std::string path_model;  // populated by PARAFORMER_init_from_file()
+#ifdef USE_COREML
+    PARAFORMER_coreml_context *ctx_coreml = nullptr;
+#endif
+
+//#ifdef GGML_USE_METAL
+//    ggml_metal_context *ctx_metal = nullptr;
+//#endif
+
+    // [EXPERIMENTAL] token-level timestamps data
+    int64_t t_beg = 0;
+    int64_t t_last = 0;
+    int tid_last;
+    std::vector<float> energy;  // PCM signal energy
+
+    // [EXPERIMENTAL] speed-up techniques
+    int32_t exp_n_audio_ctx = 0;  // 0 - use default
+};
+
+// Progress callback
+typedef void (*sense_voice_progress_callback)(struct sense_voice_context *ctx,
+                                             struct sense_voice_state *state,
+                                             int progress, void *user_data);
+
+
+struct sense_voice_full_params {
+    enum sense_voice_decoding_strategy strategy;
+    int n_threads;
+    int n_max_text_ctx;  // max tokens to use from past text as prompt for the
+                          // decoder
+    int offset_ms;       // start offset in ms
+    int duration_ms;     // audio duration to process in ms
+
+    bool no_timestamps;     // do not generate timestamps
+    bool single_segment;    // force single segment output (useful for streaming)
+    bool print_progress;    // print progress information
+    bool print_timestamps;  // print timestamps for each text segment when
+                          // printing realtime
+
+    bool debug_mode;  // enable debug_mode provides extra info (eg. Dump log_mel)
+
+    struct {
+        int best_of;
+    } greedy;
+
+    struct {
+        int beam_size;
+    } beam_search;
+
+    // called on each progress update
+    sense_voice_progress_callback progress_callback;
+    void *progress_callback_user_data;
+
+};
+
+
+
+struct sense_voice_model {
+    sense_voice_hparams hparams;
+    sense_voice_encoder *encoder;
+    sense_voice_decoder *decoder;
+    // context
+    struct ggml_context *ctx;
+
+    // the model memory buffer is read-only and can be shared between processors
+    std::vector<uint8_t> *buf;
+
+    // tensors
+    int n_loaded;
+    std::map<std::string, struct ggml_tensor *> tensors;
+};
+
+struct sense_voice_context_params {
+    bool use_gpu;
+    int gpu_device;  // CUDA device
+};
+
+struct sense_voice_context {
+    int64_t t_load_ms = 0;
+    int64_t t_start_ms = 0;
+
+    ggml_type wtype = ggml_type::GGML_TYPE_F16;  // weight type (FP32 / FP16 / QX)
+    ggml_type itype =
+            ggml_type::GGML_TYPE_F16;  // intermediate type (FP32 or FP16)
+
+    sense_voice_model model;
+    sense_voice_vocab vocab;
+
+    sense_voice_context_params params;
+
+    struct sense_voice_state *state = nullptr;
+    ggml_backend_t backend = nullptr;
+    std::string path_model;
+};
+
+struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_decoding_strategy strategy) {
+    struct sense_voice_full_params result = {
+            /*.strategy          =*/ strategy,
+
+            /*.n_threads         =*/ std::min(4, (int32_t) std::thread::hardware_concurrency()),
+            /*.n_max_text_ctx    =*/ 16384,
+            /*.offset_ms         =*/ 0,
+            /*.duration_ms       =*/ 0,
+
+            /*.no_context        =*/ true,
+            /*.no_timestamps     =*/ false,
+            /*.print_progress    =*/ true,
+            /*.print_timestamps  =*/ true,
+
+
+            /*.debug_mode        =*/ false,
+
+            /*.greedy            =*/ {
+                    /*.best_of   =*/ -1,
+            },
+
+            /*.beam_search      =*/ {
+                    /*.beam_size =*/ -1,
+            },
+
+            /*.progress_callback           =*/ nullptr,
+            /*.progress_callback_user_data =*/ nullptr,
+
+    };
+
+    switch (strategy) {
+        case SENSE_VOICE_SAMPLING_GREEDY:
+        {
+            result.greedy = {
+                    /*.best_of   =*/ 5,
+            };
+        } break;
+        case SENSE_VOICE_SAMPLING_BEAM_SEARCH:
+        {
+            result.beam_search = {
+                    /*.beam_size =*/ 5
+            };
+        } break;
+    }
+
+    return result;
+}
+
+#endif//SENSEVOICE_CPP_COMMON_H

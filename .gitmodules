@@ -1,0 +1,3 @@
+[submodule "sense-voice/csrc/third-party/ggml"]
+	path = sense-voice/csrc/third-party/ggml
+	url = https://github.com/ggerganov/ggml.git
