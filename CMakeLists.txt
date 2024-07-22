@@ -10,11 +10,10 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall")
 
 set(SOURCE_FILES
-        sense-voice/csrc/sense-voice-small.cc
-        sense-voice/csrc/sense-voice-frontend.cc
-        sense-voice/csrc/log-mel-filter-bank.h
-        sense-voice/csrc/fftsg.cpp
         sense-voice/csrc/common.h
+        sense-voice/csrc/common.cc
+        sense-voice/csrc/sense-voice-small.h
+        sense-voice/csrc/sense-voice-small.cc
 )
 
 option(SENSEVOICE_BUILD_TESTS "sense-voice: build tests" OFF)
@@ -34,8 +33,9 @@ if (SENSEVOICE_BUILD_TESTS)
 endif ()
 
 
-add_executable(sense-voice-main sense-voice/csrc/main.cc)
+
 
 target_link_libraries(sense-voice-core PRIVATE ggml)
+add_executable(sense-voice-main sense-voice/csrc/main.cc)
+target_link_libraries(sense-voice-main PRIVATE sense-voice-core ggml)
 
-target_link_libraries(sense-voice-main sense-voice-core ggml)

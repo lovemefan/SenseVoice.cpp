@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cmath>
 #include <thread>
+#include "sense-voice-small.h"
 #include "common.h"
 
 #if defined(_MSC_VER)
@@ -248,7 +249,7 @@ int main(int argc, char ** argv) {
 
     if (params.language != "auto" && sense_voice_lang_id(params.language.c_str()) == -1) {
         fprintf(stderr, "error: unknown language '%s'\n", params.language.c_str());
-        whisper_print_usage(argc, argv, params);
+        sense_voice_print_usage(argc, argv, params);
         exit(0);
     }
 }

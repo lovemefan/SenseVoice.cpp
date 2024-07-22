@@ -29,93 +29,12 @@
 #include <vector>
 
 
-#ifdef __GNUC__
-#ifdef __MINGW32__
-#define SENSEVOICE_ATTRIBUTE_FORMAT(...) \
-  __attribute__((format(gnu_printf, __VA_ARGS__)))
-#else
-#define SENSEVOICE_ATTRIBUTE_FORMAT(...) \
-  __attribute__((format(printf, __VA_ARGS__)))
-#endif
-#else
-#define SENSEVOICE_ATTRIBUTE_FORMAT(...)
-#endif
 #define SENSEVOICE_MAX_NODES 4096
-//
-// logging
-//
 
-SENSEVOICE_ATTRIBUTE_FORMAT(2, 3)
-static void sense_voice_log_internal(ggml_log_level level, const char *format,
-                                    ...);
-static void sense_voice_log_callback_default(ggml_log_level level,
-                                            const char *text, void *user_data);
-
-#define SENSEVOICE_LOG_ERROR(...) \
-  sense_voice_log_internal(GGML_LOG_LEVEL_ERROR, __VA_ARGS__)
-#define SENSEVOICE_LOG_WARN(...) \
-  sense_voice_log_internal(GGML_LOG_LEVEL_WARN, __VA_ARGS__)
-#define SENSEVOICE_LOG_INFO(...) \
-  sense_voice_log_internal(GGML_LOG_LEVEL_INFO, __VA_ARGS__)
-
-// define this to enable verbose trace logging - useful for debugging purposes
-#define SENSEVOICE_DEBUG
-
-#if defined(SENSEVOICE_DEBUG)
-#define SENSEVOICE_LOG_DEBUG(...) \
-  sense_voice_log_internal(GGML_LOG_LEVEL_DEBUG, __VA_ARGS__)
-#else
-#define SENSEVOICE_LOG_DEBUG(...)
-#endif
-
-#define SENSEVOICE_ASSERT(x)                                           \
-  do {                                                                 \
-    if (!(x)) {                                                        \
-      SENSEVOICE_LOG_ERROR("SENSEVOICE_ASSERT: %s:%d: %s\n", __FILE__, \
-                           __LINE__, #x);                              \
-      abort();                                                         \
-    }                                                                  \
-  } while (0)
 
 
 
 static const size_t MB = 1ull * 1024 * 1024;
-
-static void sense_voice_log_callback_default(ggml_log_level level,
-                                            const char *text, void *user_data) {
-    (void)level;
-    (void)user_data;
-    fputs(text, stderr);
-    fflush(stderr);
-}
-
-struct sense_voice_global {
-    // We save the log callback globally
-    ggml_log_callback log_callback = sense_voice_log_callback_default;
-    void *log_callback_user_data = nullptr;
-};
-
-static sense_voice_global g_state;
-
-GGML_ATTRIBUTE_FORMAT(2, 3)
-static void sense_voice_log_internal(ggml_log_level level, const char *format,
-                                    ...) {
-    va_list args;
-    va_start(args, format);
-    char buffer[1024];
-    int len = vsnprintf(buffer, 1024, format, args);
-    if (len < 1024) {
-        g_state.log_callback(level, buffer, g_state.log_callback_user_data);
-    } else {
-        char *buffer2 = new char[len + 1];
-        vsnprintf(buffer2, len + 1, format, args);
-        buffer2[len] = 0;
-        g_state.log_callback(level, buffer2, g_state.log_callback_user_data);
-        delete[] buffer2;
-    }
-    va_end(args);
-}
-
 
 // ############ model structure #############
 struct sense_voice_bias_encoder {
@@ -203,10 +122,10 @@ static ggml_backend_t sense_voice_backend_init(
     // initialize the backends
 #ifdef GGML_USE_CUDA
     if (params.use_gpu) {
-        WHISPER_LOG_INFO("%s: using CUDA backend\n", __func__);
+        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
         backend_gpu = ggml_backend_cuda_init(params.gpu_device);
         if (!backend_gpu) {
-            WHISPER_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
         }
     }
 #endif
@@ -231,10 +150,10 @@ static ggml_backend_t sense_voice_backend_init(
 
 #ifdef GGML_USE_SYCL
     if (params.use_gpu) {
-        WHISPER_LOG_INFO("%s: using SYCL backend\n", __func__);
+        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
         backend_gpu = ggml_backend_sycl_init(params.gpu_device);
         if (!backend_gpu) {
-            WHISPER_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
         }
     }
 #endif
@@ -285,7 +204,7 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
 
     cur = ggml_transpose(ctx0, cur);
     struct ggml_tensor *residual = nullptr;
-    for (auto layer : model.encoder.encoder_layer) {
+    for (auto layer : model.encoder->encoder_layer) {
         if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
             residual = ggml_cpy(
                     ctx0, cur,
@@ -315,7 +234,6 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
             struct ggml_tensor *K;
             struct ggml_tensor *V;
             struct ggml_tensor *V_h;
-            struct ggml_tensor *fsmn_memory;
 
             Q = ggml_cpy(ctx0,
                          ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
@@ -364,9 +282,7 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
                         layer.e_attn_fsmn_w->ne[2], layer.e_attn_fsmn_w->ne[3],
                         1);  // [OC，1, KH, KW] => [1, OC, 1, KH * KW]
                 struct ggml_tensor *result = ggml_mul_mat(ctx0, new_a, new_b);
-                fsmn_memory =
-                        ggml_reshape_4d(ctx0, result, im2col->ne[1], im2col->ne[2],
-                                        V->ne[2], V->ne[3]);  // [N, OC, OH, OW]
+
             }
 
 #ifdef USE_FLASH_ATTN

@@ -116,7 +116,79 @@ static void byteswap_tensor(ggml_tensor *tensor) {
   } while (0)
 #endif
 
+#ifdef __GNUC__
+#ifdef __MINGW32__
+#define SENSE_VOICE_ATTRIBUTE_FORMAT(...) __attribute__((format(gnu_printf, __VA_ARGS__)))
+#else
+#define SENSE_VOICE_ATTRIBUTE_FORMAT(...) __attribute__((format(printf, __VA_ARGS__)))
+#endif
+#else
+#define SENSE_VOICE_ATTRIBUTE_FORMAT(...)
+#endif
+
+#define SENSEVOICE_LOG_ERROR(...) \
+  sense_voice_log_internal(GGML_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define SENSEVOICE_LOG_WARN(...) \
+  sense_voice_log_internal(GGML_LOG_LEVEL_WARN, __VA_ARGS__)
+#define SENSEVOICE_LOG_INFO(...) \
+  sense_voice_log_internal(GGML_LOG_LEVEL_INFO, __VA_ARGS__)
+
+// define this to enable verbose trace logging - useful for debugging purposes
+#define SENSEVOICE_DEBUG
+
+#if defined(SENSEVOICE_DEBUG)
+#define SENSEVOICE_LOG_DEBUG(...) \
+  sense_voice_log_internal(GGML_LOG_LEVEL_DEBUG, __VA_ARGS__)
+#else
+#define SENSEVOICE_LOG_DEBUG(...)
+#endif
+
+#define SENSEVOICE_ASSERT(x)                                           \
+  do {                                                                 \
+    if (!(x)) {                                                        \
+      SENSEVOICE_LOG_ERROR("SENSEVOICE_ASSERT: %s:%d: %s\n", __FILE__, \
+                           __LINE__, #x);                              \
+      abort();                                                         \
+    }                                                                  \
+  } while (0)
+//
+// logging
+//
+
+SENSE_VOICE_ATTRIBUTE_FORMAT(2, 3)
+void sense_voice_log_internal        (ggml_log_level level, const char * format, ...);
+void sense_voice_log_callback_default(ggml_log_level level, const char * text, void * user_data);
+
+#define SENSE_VOICE_LOG_ERROR(...) sense_voice_log_internal(GGML_LOG_LEVEL_ERROR, __VA_ARGS__)
+#define SENSE_VOICE_LOG_WARN(...)  sense_voice_log_internal(GGML_LOG_LEVEL_WARN , __VA_ARGS__)
+#define SENSE_VOICE_LOG_INFO(...)  sense_voice_log_internal(GGML_LOG_LEVEL_INFO , __VA_ARGS__)
+
+// define this to enable verbose trace logging - useful for debugging purposes
+//#define SENSE_VOICE_DEBUG
+
+#if defined(SENSE_VOICE_DEBUG)
+#define SENSE_VOICE_LOG_DEBUG(...) sense_voice_log_internal(GGML_LOG_LEVEL_DEBUG, __VA_ARGS__)
+#else
+#define SENSE_VOICE_LOG_DEBUG(...)
+#endif
+
+#define SENSE_VOICE_ASSERT(x) \
+    do { \
+        if (!(x)) { \
+            SENSE_VOICE_LOG_ERROR("SENSE_VOICE_ASSERT: %s:%d: %s\n", __FILE__, __LINE__, #x); \
+            abort(); \
+        } \
+    } while (0)
+
 #define SENSEVOICE_MAX_NODES 4096
+
+struct sense_voice_global {
+    // We save the log callback globally
+    ggml_log_callback log_callback = sense_voice_log_callback_default;
+    void * log_callback_user_data = nullptr;
+};
+
+static sense_voice_global g_state;
 
 // available whisper models
 enum e_model {
@@ -181,13 +253,8 @@ struct paraformer_pair {
     paraformer_pair() : first(A()), second(B()) {}
 };
 
-// Available sampling strategies
-enum sense_voice_decoding_strategy {
-    SENSE_VOICE_SAMPLING_GREEDY,
-    SENSE_VOICE_SAMPLING_BEAM_SEARCH,
-};
 
-// ggml_allocr wrapper for PARAFORMER usage
+// ggml_allocr wrapper for usage
 struct sense_voice_allocr {
     ggml_gallocr_t alloc = nullptr;
     std::vector<uint8_t> meta;
@@ -300,6 +367,11 @@ typedef void (*sense_voice_progress_callback)(struct sense_voice_context *ctx,
                                              struct sense_voice_state *state,
                                              int progress, void *user_data);
 
+// Available sampling strategies
+enum sense_voice_decoding_strategy {
+    SENSE_VOICE_SAMPLING_GREEDY,
+    SENSE_VOICE_SAMPLING_BEAM_SEARCH,
+};
 
 struct sense_voice_full_params {
     enum sense_voice_decoding_strategy strategy;
@@ -371,52 +443,6 @@ struct sense_voice_context {
     std::string path_model;
 };
 
-struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_decoding_strategy strategy) {
-    struct sense_voice_full_params result = {
-            /*.strategy          =*/ strategy,
-
-            /*.n_threads         =*/ std::min(4, (int32_t) std::thread::hardware_concurrency()),
-            /*.n_max_text_ctx    =*/ 16384,
-            /*.offset_ms         =*/ 0,
-            /*.duration_ms       =*/ 0,
-
-            /*.no_context        =*/ true,
-            /*.no_timestamps     =*/ false,
-            /*.print_progress    =*/ true,
-            /*.print_timestamps  =*/ true,
-
-
-            /*.debug_mode        =*/ false,
-
-            /*.greedy            =*/ {
-                    /*.best_of   =*/ -1,
-            },
-
-            /*.beam_search      =*/ {
-                    /*.beam_size =*/ -1,
-            },
-
-            /*.progress_callback           =*/ nullptr,
-            /*.progress_callback_user_data =*/ nullptr,
-
-    };
-
-    switch (strategy) {
-        case SENSE_VOICE_SAMPLING_GREEDY:
-        {
-            result.greedy = {
-                    /*.best_of   =*/ 5,
-            };
-        } break;
-        case SENSE_VOICE_SAMPLING_BEAM_SEARCH:
-        {
-            result.beam_search = {
-                    /*.beam_size =*/ 5
-            };
-        } break;
-    }
-
-    return result;
-}
+struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_decoding_strategy strategy);
 
 #endif//SENSEVOICE_CPP_COMMON_H
