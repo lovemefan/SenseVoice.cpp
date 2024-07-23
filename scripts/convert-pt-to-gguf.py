@@ -29,8 +29,8 @@ class MODEL_ARCH(IntEnum):
 
 
 MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
-    MODEL_ARCH.SENSEVOICE_SMALL: "SenseVoice-small",
-    MODEL_ARCH.SENSEVOICE_LARGE: "SenseVoice-large",
+    MODEL_ARCH.SENSEVOICE_SMALL: "SenseVoiceSmall",
+    MODEL_ARCH.SENSEVOICE_LARGE: "SenseVoiceLarge",
 }
 
 AnyModel = TypeVar("AnyModel", bound="type[Model]")
@@ -366,7 +366,7 @@ def main() -> None:
     with torch.inference_mode():
         model_class = Model.from_model_architecture(hparams["model"])
         model_instance = model_class(
-            dir_model, ftype_map[args.outtype], fname_out, args.bigendian
+            dir_model, ftype_map[args.out_type], fname_out, args.bigendian
         )
 
         print("Set model parameters")
