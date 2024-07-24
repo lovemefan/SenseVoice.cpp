@@ -36,68 +36,6 @@
 
 static const size_t MB = 1ull * 1024 * 1024;
 
-// ############ model structure #############
-struct sense_voice_bias_encoder {
-    // bias encoder is a lstm model
-
-    struct ggml_tensor *bias_embed;
-
-    // bias_encoder.weight_ih_l0
-    struct ggml_tensor *be_ih_l_w0;
-    struct ggml_tensor *be_ih_l_b0;
-
-    // bias_encoder.weight_hh_l0
-    struct ggml_tensor *be_hh_l_w0;
-    struct ggml_tensor *be_hh_l_b0;
-
-    // bias_encoder.weight_ih_l1
-    struct ggml_tensor *be_ih_l_w1;
-    struct ggml_tensor *be_ih_l_b1;
-
-    // bias_encoder.weight_hh_l1
-    struct ggml_tensor *be_hh_l_w1;
-    struct ggml_tensor *be_hh_l_b1;
-};
-
-struct sense_voice_layer_encoder {
-    // encoder_attn.linear_out.weight
-    struct ggml_tensor *e_attn_ln_out_w;
-    struct ggml_tensor *e_attn_ln_out_b;
-
-    // encoder.self_attn.linear_q_k_v.weight
-    struct ggml_tensor *e_attn_ln_qkv_w;
-    struct ggml_tensor *e_attn_ln_qkv_b;
-
-    // encoder.self_attn.fsmn_block.weight
-    struct ggml_tensor *e_attn_fsmn_w;
-
-    // encoder.feed_forward.w_1.weight
-    struct ggml_tensor *e_mlp_w1;
-    struct ggml_tensor *e_mlp_b1;
-
-    // encoder.feed_forward.w_2.weight
-    struct ggml_tensor *e_mlp_w2;
-    struct ggml_tensor *e_mlp_b2;
-
-    // encoder.norm1.weight
-    struct ggml_tensor *e_norm_w1;
-    struct ggml_tensor *e_norm_b1;
-
-    // encoder.norm2.weight
-    struct ggml_tensor *e_norm_w2;
-    struct ggml_tensor *e_norm_b2;
-};
-
-struct sense_voice_encoder {
-    ggml_type wtype = ggml_type::GGML_TYPE_F16;  // weight type (FP32 / FP16 / QX)
-    ggml_type itype =
-            ggml_type::GGML_TYPE_F16;  // intermediate type (FP32 or FP16)
-    std::vector<sense_voice_layer_encoder> encoder_layer;
-    // encoder.after_norm.weight
-    struct ggml_tensor *e_after_norm_w;
-    struct ggml_tensor *e_after_norm_b;
-};
-
 
 struct sense_voice_context *sense_voice_init(struct gguf_context *g_context) {
     ggml_time_init();
@@ -109,8 +47,9 @@ struct sense_voice_context *sense_voice_init(struct gguf_context *g_context) {
 
 struct sense_voice_context_params sense_voice_context_default_params() {
     struct sense_voice_context_params result = {
-            /*.use_gpu              =*/true,
-            /*.gpu_device           =*/0,
+            /*.use_gpu              =*/ true,
+            /*.flash_attn           =*/ false,
+            /*.gpu_device           =*/ 0
     };
     return result;
 }
@@ -167,8 +106,8 @@ static ggml_backend_t sense_voice_backend_init(
 
 struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
                                                    sense_voice_state &pstate) {
-    const auto &model = pctx.model;
-    const auto &hparams = model.hparams;
+    const auto &model = pctx.model.model;
+    const auto &hparams = pctx.model.hparams;
     const int n_ctx =
             pstate.exp_n_audio_ctx > 0 ? pstate.exp_n_audio_ctx : hparams.n_audio_ctx;
     const int n_state = hparams.n_encoder_hidden_state;
@@ -186,25 +125,58 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     ggml_cgraph *gf = ggml_new_graph_custom(ctx0, SENSEVOICE_MAX_NODES, false);
 
     struct ggml_tensor *fbank = ggml_new_tensor_2d(
-            ctx0, GGML_TYPE_F32, n_ctx, hparams.n_mels * hparams.lfr_m);
+            ctx0, GGML_TYPE_F32, hparams.n_mels * hparams.lfr_m, n_ctx);
 
-    struct ggml_tensor *position = ggml_new_tensor_2d(
-            ctx0, GGML_TYPE_F32, n_ctx, hparams.n_mels * hparams.lfr_m);
+    struct ggml_tensor *embedding_position = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 4);
 
     ggml_set_name(fbank, "fbank");
     ggml_set_input(fbank);
 
-    ggml_set_name(position, "position");
-    ggml_set_input(position);
 
-    // token encoding + position encoding
-    struct ggml_tensor *cur = ggml_add(ctx0, fbank, position);
+    ggml_tensor *embedding = ggml_get_rows(ctx0, model->embedding, embedding_position);
+
+    struct ggml_tensor *cur = ggml_concat(ctx0, embedding, fbank, 1);
+
+    cur = ggml_mul(ctx0, cur, ggml_new_f32(ctx0, sqrtf(hparams.n_encoder_hidden_state)));
+
+    // todo : implement encoder small forward graph
+    // 1. sinusoidal position
+    // 2. encoders0
+    // 3. encoders
+    // 4. tp_encoders
+    // 5. tp_norm
+    // 6. linear
+    ggml_tensor *position_embedding = ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]);
+    // construct position embedding
+    {
+        auto n_len = cur->ne[1];
+        auto dim = fbank->ne[0];
+        std::vector<float> position;
+        position.resize(n_len * dim);
+
+        // sinusoidal position embedding
+        // reference:
+        // https://github.com/modelscope/FunASR/blob/45d7aa9004763684fb748ee17942ecba81042201/funasr/models/transformer/embedding.py#L392-L405
+        // P_{k,i} = sin(k/10000^(2i/d))  0 < i < d/2
+        // p_{k,j} = cos(k/10000^(2i/d))  d/2 < j < d
+
+        for (int k = 1; k <= n_len; k++) {
+            for (int i = 0; i < dim / 2; i++) {
+                position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
+                position[(k - 1) * dim + i + dim / 2] =
+                        cosf(k * pow(10000, -2.0 * i / dim));
+            }
+        }
+        ggml_backend_tensor_set(
+                position_embedding, position.data(), 0,
+                ggml_nelements(position_embedding) * sizeof(float));
+    }
 
     static int iter = 0;
 
     cur = ggml_transpose(ctx0, cur);
     struct ggml_tensor *residual = nullptr;
-    for (auto layer : model.encoder->encoder_layer) {
+    for (auto layer : model->encoder->encoders_layer) {
         if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
             residual = ggml_cpy(
                     ctx0, cur,
@@ -417,3 +389,59 @@ static bool sense_voice_encode_internal(sense_voice_context &ctx,
     return true;
 }
 
+bool set_sense_voice_encoder_layer_sanm(std::vector<sense_voice_layer_encoder> &encoder,
+                                        std::map<std::string,
+                                        struct ggml_tensor *> &tensors,
+                                        int n_encoder_layers,
+                                        std::string prefix){
+    for (int i = 0; i < n_encoder_layers; ++i) {
+        auto layer = &encoder[i];
+        // map by name
+        layer->e_attn_ln_out_w =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_out.weight"];
+        layer->e_attn_ln_out_b =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_out.bias"];
+
+        layer->e_attn_ln_qkv_w =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_q_k_v.weight"];
+        layer->e_attn_ln_qkv_b =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_q_k_v.bias"];
+
+        layer->e_attn_fsmn_w =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.fsmn_block.weight"];
+
+        layer->e_mlp_w1 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".feed_forward.w_1.weight"];
+        layer->e_mlp_b1 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".feed_forward.w_1.bias"];
+
+        layer->e_mlp_w2 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".feed_forward.w_2.weight"];
+        layer->e_mlp_b2 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".feed_forward.w_2.bias"];
+
+        layer->e_norm_w1 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".norm1.weight"];
+        layer->e_norm_b1 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".norm1.bias"];
+
+        layer->e_norm_w2 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".norm2.weight"];
+        layer->e_norm_b2 =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".norm2.bias"];
+    }
+    return true;
+}

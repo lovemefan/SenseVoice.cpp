@@ -10,6 +10,55 @@
 #include "common.h"
 
 
+// ############ model structure #############
+
+struct sense_voice_layer_encoder {
+    // encoder_attn.linear_out.weight
+    struct ggml_tensor *e_attn_ln_out_w;
+    struct ggml_tensor *e_attn_ln_out_b;
+
+    // encoder.self_attn.linear_q_k_v.weight
+    struct ggml_tensor *e_attn_ln_qkv_w;
+    struct ggml_tensor *e_attn_ln_qkv_b;
+
+    // encoder.self_attn.fsmn_block.weight
+    struct ggml_tensor *e_attn_fsmn_w;
+
+    // encoder.feed_forward.w_1.weight
+    struct ggml_tensor *e_mlp_w1;
+    struct ggml_tensor *e_mlp_b1;
+
+    // encoder.feed_forward.w_2.weight
+    struct ggml_tensor *e_mlp_w2;
+    struct ggml_tensor *e_mlp_b2;
+
+    // encoder.norm1.weight
+    struct ggml_tensor *e_norm_w1;
+    struct ggml_tensor *e_norm_b1;
+
+    // encoder.norm2.weight
+    struct ggml_tensor *e_norm_w2;
+    struct ggml_tensor *e_norm_b2;
+};
+
+struct sense_voice_encoder {
+    ggml_type wtype = ggml_type::GGML_TYPE_F16;  // weight type (FP32 / FP16 / QX)
+    ggml_type itype =
+            ggml_type::GGML_TYPE_F16;  // intermediate type (FP32 or FP16)
+    sense_voice_layer_encoder encoder0;
+    std::vector<sense_voice_layer_encoder> encoders_layer;
+    std::vector<sense_voice_layer_encoder> tp_encoders_layer;
+
+    // encoder.tp_norm.weight
+    struct ggml_tensor *e_tp_norm_w;
+    struct ggml_tensor *e_tp_norm_b;
+
+    // encoder.after_norm.weight
+    struct ggml_tensor *e_after_norm_w;
+    struct ggml_tensor *e_after_norm_b;
+};
+
+
 // Progress callback
 typedef void (*sense_voice_progress_callback)(struct sense_voice_context *ctx,
                                              struct sense_voice_state *state,
@@ -32,5 +81,8 @@ SENSEVOICE_API void sense_voice_free(struct sense_voice_context *ctx);
 SENSEVOICE_API void sense_voice_free_params(
         struct sense_voice_full_params *params);
 
+bool set_sense_voice_encoder_layer_sanm(
+        std::vector<sense_voice_layer_encoder> &layer, std::map<std::string,
+        struct ggml_tensor *> &tensors, int n_encoder_layers, std::string prefix);
 
 #endif//SENSEVOICE_CPP_SENSE_VOICE_ENCODER_H
