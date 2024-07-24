@@ -1,11 +1,11 @@
 //
 // Created by lovemefan on 2024/7/21.
 //
-#include <cstdint>
-#include <cmath>
-#include <thread>
-#include "sense-voice-small.h"
 #include "common.h"
+#include "sense-voice.h"
+#include <cmath>
+#include <cstdint>
+#include <thread>
 
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
@@ -252,4 +252,15 @@ int main(int argc, char ** argv) {
         sense_voice_print_usage(argc, argv, params);
         exit(0);
     }
+
+    // sense-voice init
+
+    struct sense_voice_context_params cparams = sense_voice_context_default_params();
+
+    cparams.use_gpu    = params.use_gpu;
+    cparams.flash_attn = params.flash_attn;
+
+    struct sense_voice_context * ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
+
+
 }

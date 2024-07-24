@@ -195,9 +195,19 @@ enum e_model {
     MODEL_SMALL,
     MODEL_LARGE,
 };
-
 struct sense_voice_encoder;
-struct sense_voice_decoder;
+
+struct sense_voice {
+    struct ggml_tensor *embedding;
+
+    struct sense_voice_encoder *encoder;
+
+    // ctc  out
+    struct ggml_tensor *ctc_out_linear_weight;
+    struct ggml_tensor *ctc_out_linear_bias;
+
+};
+
 
 static const std::map<std::string, std::pair<int, std::string>> g_lang = {
         { "auto",  { 0,  "auto",         } },
@@ -216,6 +226,7 @@ struct sense_voice_hparams {
     int n_encoder_linear_units = 2048;
     int n_encoder_attention_heads = 4;  // head of self attention
     int n_encoder_layers = 50;          // num block of encoder
+    int n_tp_encoder_layers = 20;
     int n_encoder_0_norm_size = 560;
     int n_decoder_hidden_state = 512;
     int n_decoder_linear_units = 2048;
@@ -345,12 +356,9 @@ struct sense_voice_state {
 
     std::string path_model;  // populated by PARAFORMER_init_from_file()
 #ifdef USE_COREML
-    PARAFORMER_coreml_context *ctx_coreml = nullptr;
+    sense_voice_coreml_context *ctx_coreml = nullptr;
 #endif
 
-//#ifdef GGML_USE_METAL
-//    ggml_metal_context *ctx_metal = nullptr;
-//#endif
 
     // [EXPERIMENTAL] token-level timestamps data
     int64_t t_beg = 0;
@@ -406,9 +414,9 @@ struct sense_voice_full_params {
 
 
 struct sense_voice_model {
+    std::string model_type;
     sense_voice_hparams hparams;
-    sense_voice_encoder *encoder;
-    sense_voice_decoder *decoder;
+    sense_voice *model;
     // context
     struct ggml_context *ctx;
 
@@ -422,6 +430,7 @@ struct sense_voice_model {
 
 struct sense_voice_context_params {
     bool use_gpu;
+    bool  flash_attn;
     int gpu_device;  // CUDA device
 };
 
