@@ -21,7 +21,7 @@
 #ifdef GGML_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
-#define SENSE_VOICE_MAX_NODES 4096
+#define SENSE_VOICE_MAX_NODES 8192
 
 int sense_voice_lang_id(const char * lang) {
     if (!g_lang.count(lang)) {
@@ -117,8 +117,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
         const size_t scale = sense_voice.hparams.ftype ? 1 : 2;
 
-        SENSE_VOICE_LOG_INFO("%s: n_vocab       = %d\n", __func__, hparams.n_vocab);
-        SENSE_VOICE_LOG_INFO("%s: n_encoder_hidden_state   =%d\n", __func__,
+        SENSE_VOICE_LOG_INFO("%s: n_vocab = %d\n", __func__, hparams.n_vocab);
+        SENSE_VOICE_LOG_INFO("%s: n_encoder_hidden_state = %d\n", __func__,
                             hparams.n_encoder_hidden_state);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_linear_units = %d\n", __func__,
                             hparams.n_encoder_linear_units);
@@ -128,7 +128,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
                             hparams.n_encoder_layers);
 
         if (sense_voice.model_type == "SenseVoiceLarge") {
-            SENSE_VOICE_LOG_INFO("%s: n_decoder_hidden_state    = %d\n", __func__,
+            SENSE_VOICE_LOG_INFO("%s: n_decoder_hidden_state  = %d\n", __func__,
                                  hparams.n_decoder_hidden_state);
             SENSE_VOICE_LOG_INFO("%s: n_decoder_linear_units  = %d\n", __func__,
                                  hparams.n_decoder_linear_units);
@@ -137,8 +137,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             SENSE_VOICE_LOG_INFO("%s: n_decoder_layers  = %d\n", __func__,
                                  hparams.n_decoder_layers);
         }
-        SENSE_VOICE_LOG_INFO("%s: n_mels        = %d\n", __func__, hparams.n_mels);
-        SENSE_VOICE_LOG_INFO("%s: ftype         = %d\n", __func__,
+        SENSE_VOICE_LOG_INFO("%s: n_mels  = %d\n", __func__, hparams.n_mels);
+        SENSE_VOICE_LOG_INFO("%s: ftype  = %d\n", __func__,
                              sense_voice.hparams.ftype);
 
 
@@ -225,7 +225,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         // build model
         sense_voice.model = new struct sense_voice;
         sense_voice.model->encoder = new struct sense_voice_encoder;
-        sense_voice.model->encoder->encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_encoder_layers);
+        sense_voice.model->encoder->encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_encoder_layers - 1);
         sense_voice.model->encoder->tp_encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_tp_encoder_layers);
 
 
@@ -237,7 +237,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             tmp_encoder0.push_back(sense_voice.model->encoder->encoder0);
             set_sense_voice_encoder_layer_sanm(tmp_encoder0, sense_voice.tensors, 1, "encoders0");
             sense_voice.model->encoder->encoder0 = tmp_encoder0[0];
-            set_sense_voice_encoder_layer_sanm(sense_voice.model->encoder->encoders_layer, sense_voice.tensors, hparams.n_encoder_layers, "encoders");
+            set_sense_voice_encoder_layer_sanm(sense_voice.model->encoder->encoders_layer, sense_voice.tensors, hparams.n_encoder_layers - 1, "encoders");
             set_sense_voice_encoder_layer_sanm(sense_voice.model->encoder->tp_encoders_layer, sense_voice.tensors, hparams.n_tp_encoder_layers, "tp_encoders");
 
             sense_voice.model->encoder->e_after_norm_w = sense_voice.tensors["encoder->after_norm.weight"];
@@ -398,7 +398,7 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     
     state->backend = sense_voice_backend_init(ctx->params);
     if (!state->backend) {
-        SENSE_VOICE_LOG_ERROR("%s: whisper_backend_init() failed\n", __func__);
+        SENSE_VOICE_LOG_ERROR("%s: sense_voice_backend_init() failed\n", __func__);
         sense_voice_free_state(state);
         return nullptr;
     }

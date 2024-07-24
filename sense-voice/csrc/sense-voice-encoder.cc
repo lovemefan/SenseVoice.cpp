@@ -15,22 +15,11 @@
 #ifdef GGML_USE_METAL
 #include "ggml-metal.h"
 #endif
-#include <assert.h>
-#include <math.h>
-#include <stdarg.h>
 
-#include <cstddef>
-#include <fstream>
-#include <functional>
-#include <iostream>
+#include <assert.h>
 #include <map>
-#include <sstream>
 #include <string>
 #include <vector>
-
-
-#define SENSEVOICE_MAX_NODES 4096
-
 
 
 
@@ -104,7 +93,140 @@ static ggml_backend_t sense_voice_backend_init(
 }
 
 
-struct ggml_tensor *encoder_layer_sanm_forward(ggml_tensor *input, sense_voice_layer_encoder *layers){
+struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml_context *ctx0, ggml_tensor *cur, sense_voice_layer_encoder &layer){
+
+    const int n_state = hparams.n_encoder_hidden_state;
+    const int n_head = hparams.n_encoder_attention_heads;
+
+    struct ggml_tensor *residual = nullptr;
+
+    if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
+        residual = ggml_cpy(
+                ctx0, cur,
+                ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]));
+    }
+
+    {
+        // layer norm
+        // cur = ln_0_w*cur + ln_0_b
+        cur = ggml_norm(ctx0, cur, hparams.eps);
+        cur =
+                ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w1), layer.e_norm_b1);
+    }
+
+    // self attention
+    {
+        // self attention linear qkv
+        cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_qkv_w, cur),
+                       layer.e_attn_ln_qkv_b);
+        // cur [1536, 1600]
+        //      cur = ggml_transpose(ctx0, cur);
+        // split qkv into separate tensors
+        // q, k, v = torch.split(q_k_v, int(self.h * self.d_k), dim=-1)
+        //  ref:
+        //  https://github.com/alibaba-damo-academy/FunASR/blob/main/funasr/modules/attention.py#L391-L396
+        struct ggml_tensor *Q;
+        struct ggml_tensor *K;
+        struct ggml_tensor *V;
+        struct ggml_tensor *V_h;
+
+        int n_ctx = cur->ne[1];
+        Q = ggml_cpy(ctx0,
+                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
+                                  0 * n_state * cur->nb[0]),
+                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
+        Q = ggml_reshape_4d(ctx0, Q, n_state / n_head, n_head, n_ctx, 1);
+        Q = ggml_cont(ctx0, ggml_permute(ctx0, Q, 0, 2, 1, 3));
+        //      Q = ggml_reshape_3d(ctx0, Q, n_state / n_head, n_ctx, n_head);
+
+        K = ggml_cpy(ctx0,
+                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
+                                  1 * n_state * cur->nb[0]),
+                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
+
+        K = ggml_reshape_4d(ctx0, K, n_state / n_head, n_head, n_ctx, 1);
+        K = ggml_cont(ctx0, ggml_permute(ctx0, K, 0, 2, 1, 3));
+        //      K = ggml_reshape_3d(ctx0, K, n_state, n_ctx, n_head);
+
+        V = ggml_cpy(ctx0,
+                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
+                                  2 * n_state * cur->nb[0]),
+                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
+        V_h = ggml_reshape_4d(ctx0, V, n_state / n_head, n_head, n_ctx, 1);
+        V_h = ggml_cont(ctx0, ggml_permute(ctx0, V_h, 0, 2, 1, 3));  // transposed
+        //      V = ggml_reshape_3d(ctx0, V, n_state, n_ctx, n_head);
+
+        // fsmn forward with V
+        int left_padding = (hparams.fsmn_kernel_size - 1) / 2;
+        int right_padding = hparams.fsmn_kernel_size - 1 - left_padding;
+
+        struct ggml_tensor *fsmn_memory = ggml_new_tensor_2d(ctx0, V->type, V->ne[0], V->ne[1]);
+
+        // conv depth wise 1d with groups=input_channel implement
+        {
+            fsmn_memory = ggml_conv_depthwise_2d(ctx0,
+                                     layer.e_attn_fsmn_w,
+                                     ggml_reshape_4d(ctx0, V, 1, V->ne[0], V->ne[1], V->ne[2]),
+                                     1,1,0,0,0,0);
+            fsmn_memory = ggml_reshape_3d(ctx0, fsmn_memory, V->ne[0], V->ne[1], V->ne[2]);
+            fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
+        }
+
+
+#ifdef USE_FLASH_ATTN
+
+        struct ggml_tensor *KQV = ggml_flash_attn(ctx0, Q, K, V, false);
+#else
+
+        // K * Q
+        struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K, Q);
+
+        float KQscale = 1.0f / sqrtf(float(n_state) / n_head);
+
+        struct ggml_tensor *KQ_scaled = ggml_scale(ctx0, KQ, KQscale);
+
+        struct ggml_tensor *KQ_soft_max = ggml_soft_max(ctx0, KQ_scaled);
+
+        struct ggml_tensor *KQV = ggml_mul_mat(
+                ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
+#endif
+        struct ggml_tensor *KQV_merged = ggml_permute(ctx0, KQV, 0, 2, 1, 3);
+        cur = ggml_cpy(ctx0, KQV_merged,
+                       ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
+
+        cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_out_w, cur),
+                       layer.e_attn_ln_out_b);
+
+        // todo open when conv depth wise 1d with group implement finished
+        cur = ggml_add(ctx0, cur, fsmn_memory);
+
+        if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
+            cur = ggml_add(ctx0, cur, residual);
+        }
+    }
+
+    residual = ggml_cpy(
+            ctx0, cur,
+            ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, cur->ne[0], cur->ne[1]));
+    {
+        // layer norm after attention
+        // cur = ln_0_w*cur + ln_0_b
+        cur = ggml_norm(ctx0, cur, hparams.eps);
+        cur =
+                ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w2), layer.e_norm_b2);
+    }
+
+    {
+        // position-wise feed forward layer
+        cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_mlp_w1, cur),
+                       layer.e_mlp_b1);
+        cur = ggml_relu(ctx0, cur);
+        cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_mlp_w2, cur),
+                       layer.e_mlp_b2);
+    }
+    // residual after position wise feed forward
+    cur = ggml_add(ctx0, cur, residual);
+    return cur;
 
 }
 
@@ -114,9 +236,6 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     const auto &hparams = pctx.model.hparams;
     const int n_ctx =
             pstate.exp_n_audio_ctx > 0 ? pstate.exp_n_audio_ctx : hparams.n_audio_ctx;
-    const int n_state = hparams.n_encoder_hidden_state;
-    const int n_head = hparams.n_encoder_attention_heads;
-    const int n_layer = hparams.n_encoder_layers;
 
     struct ggml_init_params params = {
             /*.mem_size   =*/pstate.alloc_encode.meta.size(),
@@ -141,15 +260,15 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
 
     struct ggml_tensor *cur = ggml_concat(ctx0, embedding, fbank, 1);
 
-    cur = ggml_mul(ctx0, cur, ggml_new_f32(ctx0, sqrtf(hparams.n_encoder_hidden_state)));
+    cur = ggml_scale(ctx0, cur, sqrtf(hparams.n_encoder_hidden_state));
 
     // todo : implement encoder small forward graph
-    // 1. sinusoidal position
-    // 2. encoders0
-    // 3. encoders
-    // 4. tp_encoders
-    // 5. tp_norm
-    // 6. linear
+    // [x] 1. sinusoidal position
+    // [x] 2. encoders0
+    // [x] 3. encoders
+    // [x] 4. tp_encoders
+    // [ ] 5. tp_norm
+    // [ ] 6. linear
     ggml_tensor *position = ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]);
 
     // construct position embedding
@@ -184,145 +303,21 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
 
     cur = ggml_add(ctx0, position, cur);
 
-    static int iter = 0;
+    // encoders0 forward
+    cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoder0);
+
+    // encoders forward
+    for (int i=0; i < hparams.n_encoder_layers - 1; i++){
+        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoders_layer[i]);
+    }
+    // tp encoders forward
+    for (int i=0; i < hparams.n_tp_encoder_layers; i++){
+        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->tp_encoders_layer[i]);
+    }
 
     cur = ggml_transpose(ctx0, cur);
-    struct ggml_tensor *residual = nullptr;
-    for (auto layer : model->encoder->encoders_layer) {
-        if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
-            residual = ggml_cpy(
-                    ctx0, cur,
-                    ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, cur->ne[0], cur->ne[1]));
-        }
 
-        {
-            // layer norm
-            // cur = ln_0_w*cur + ln_0_b
-            cur = ggml_norm(ctx0, cur, hparams.eps);
-            cur =
-                    ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w1), layer.e_norm_b1);
-        }
 
-        // self attention
-        {
-            // self attention linear qkv
-            cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_qkv_w, cur),
-                           layer.e_attn_ln_qkv_b);
-            // cur [1536, 1600]
-            //      cur = ggml_transpose(ctx0, cur);
-            // split qkv into separate tensors
-            // q, k, v = torch.split(q_k_v, int(self.h * self.d_k), dim=-1)
-            //  ref:
-            //  https://github.com/alibaba-damo-academy/FunASR/blob/main/funasr/modules/attention.py#L391-L396
-            struct ggml_tensor *Q;
-            struct ggml_tensor *K;
-            struct ggml_tensor *V;
-            struct ggml_tensor *V_h;
-
-            Q = ggml_cpy(ctx0,
-                         ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                      0 * n_state * cur->nb[0]),
-                         ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-            Q = ggml_reshape_4d(ctx0, Q, n_state / n_head, n_head, n_ctx, 1);
-            Q = ggml_cont(ctx0, ggml_permute(ctx0, Q, 0, 2, 1, 3));
-            //      Q = ggml_reshape_3d(ctx0, Q, n_state / n_head, n_ctx, n_head);
-
-            K = ggml_cpy(ctx0,
-                         ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                      1 * n_state * cur->nb[0]),
-                         ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-
-            K = ggml_reshape_4d(ctx0, K, n_state / n_head, n_head, n_ctx, 1);
-            K = ggml_cont(ctx0, ggml_permute(ctx0, K, 0, 2, 1, 3));
-            //      K = ggml_reshape_3d(ctx0, K, n_state, n_ctx, n_head);
-
-            V = ggml_cpy(ctx0,
-                         ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                      2 * n_state * cur->nb[0]),
-                         ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-            V_h = ggml_reshape_4d(ctx0, V, n_state / n_head, n_head, n_ctx, 1);
-            V_h = ggml_cont(ctx0, ggml_permute(ctx0, V_h, 0, 2, 1, 3));  // transposed
-            //      V = ggml_reshape_3d(ctx0, V, n_state, n_ctx, n_head);
-
-            // fsmn forward with V
-            int left_padding = (hparams.fsmn_kernel_size - 1) / 2;
-            int right_padding = hparams.fsmn_kernel_size - 1 - left_padding;
-
-            // todo conv depth wise 1d with group implement
-            {
-                int s0 = 1, s1 = 1, p0 = 0, p1 = 5, d0 = 1, d1 = 1;
-                V = ggml_cont(ctx0, ggml_transpose(ctx0, V));
-                ggml_conv_1d(ctx0, layer.e_attn_fsmn_w, V, 1, 5, 1);
-                struct ggml_tensor *im2col = ggml_im2col(
-                        ctx0, layer.e_attn_fsmn_w, V, s0, s1, p0, p1, d0, d1, false,
-                        GGML_TYPE_F16);  // [N * IC, OH, OW, KH * KW]
-                struct ggml_tensor *new_b =
-                        ggml_reshape_4d(ctx0, im2col, im2col->ne[0],
-                                        im2col->ne[2] * im2col->ne[1], V->ne[2], V->ne[3]);
-
-                struct ggml_tensor *new_a = ggml_reshape_4d(
-                        ctx0, layer.e_attn_fsmn_w,
-                        (layer.e_attn_fsmn_w->ne[0] * layer.e_attn_fsmn_w->ne[1]),
-                        layer.e_attn_fsmn_w->ne[2], layer.e_attn_fsmn_w->ne[3],
-                        1);  // [OC，1, KH, KW] => [1, OC, 1, KH * KW]
-                struct ggml_tensor *result = ggml_mul_mat(ctx0, new_a, new_b);
-
-            }
-
-#ifdef USE_FLASH_ATTN
-
-            struct ggml_tensor *KQV = ggml_flash_attn(ctx0, Q, K, V, false);
-#else
-
-            // K * Q
-            struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K, Q);
-
-            float KQscale = 1.0f / sqrtf(float(n_state) / n_head);
-
-            struct ggml_tensor *KQ_scaled = ggml_scale(ctx0, KQ, KQscale);
-
-            struct ggml_tensor *KQ_soft_max = ggml_soft_max(ctx0, KQ_scaled);
-
-            struct ggml_tensor *KQV = ggml_mul_mat(
-                    ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
-#endif
-            struct ggml_tensor *KQV_merged = ggml_permute(ctx0, KQV, 0, 2, 1, 3);
-            cur = ggml_cpy(ctx0, KQV_merged,
-                           ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-
-            cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_out_w, cur),
-                           layer.e_attn_ln_out_b);
-
-            // todo open when conv depth wise 1d with group implement finished
-            // cur = ggml_add(ctx0, cur, fsmn_memory);
-
-            if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
-                cur = ggml_add(ctx0, cur, residual);
-            }
-        }
-
-        residual = ggml_cpy(
-                ctx0, cur,
-                ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, cur->ne[0], cur->ne[1]));
-        {
-            // layer norm after attention
-            // cur = ln_0_w*cur + ln_0_b
-            cur = ggml_norm(ctx0, cur, hparams.eps);
-            cur =
-                    ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w2), layer.e_norm_b2);
-        }
-
-        {
-            // position-wise feed forward layer
-            cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_mlp_w1, cur),
-                           layer.e_mlp_b1);
-            cur = ggml_relu(ctx0, cur);
-            cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_mlp_w2, cur),
-                           layer.e_mlp_b2);
-        }
-        // residual after position wise feed forward
-        cur = ggml_add(ctx0, cur, residual);
-    }
 
     ggml_build_forward_expand(gf, cur);
     ggml_free(ctx0);
@@ -397,6 +392,7 @@ static bool sense_voice_encode_internal(sense_voice_context &ctx,
                     position_embedding, position.data(), 0,
                     ggml_nelements(position_embedding) * sizeof(float));
         }
+
     }
     return true;
 }
