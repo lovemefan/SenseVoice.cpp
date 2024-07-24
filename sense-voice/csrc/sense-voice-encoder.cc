@@ -104,6 +104,10 @@ static ggml_backend_t sense_voice_backend_init(
 }
 
 
+struct ggml_tensor *encoder_layer_sanm_forward(ggml_tensor *input, sense_voice_layer_encoder *layers){
+
+}
+
 struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
                                                    sense_voice_state &pstate) {
     const auto &model = pctx.model.model;
@@ -146,31 +150,39 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     // 4. tp_encoders
     // 5. tp_norm
     // 6. linear
-    ggml_tensor *position_embedding = ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]);
+    ggml_tensor *position = ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]);
+
     // construct position embedding
     {
         auto n_len = cur->ne[1];
         auto dim = fbank->ne[0];
-        std::vector<float> position;
-        position.resize(n_len * dim);
+        std::vector<float> _position;
+        _position.resize(n_len * dim);
 
         // sinusoidal position embedding
         // reference:
         // https://github.com/modelscope/FunASR/blob/45d7aa9004763684fb748ee17942ecba81042201/funasr/models/transformer/embedding.py#L392-L405
         // P_{k,i} = sin(k/10000^(2i/d))  0 < i < d/2
-        // p_{k,j} = cos(k/10000^(2i/d))  d/2 < j < d
+        // p_{k,j} = cos(k/10000^(2j/d))  d/2 < j < d
 
         for (int k = 1; k <= n_len; k++) {
             for (int i = 0; i < dim / 2; i++) {
-                position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
-                position[(k - 1) * dim + i + dim / 2] =
+                _position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
+                _position[(k - 1) * dim + i + dim / 2] =
                         cosf(k * pow(10000, -2.0 * i / dim));
             }
         }
+
+        ggml_backend_buffer_t buffer = ggml_backend_buft_alloc_buffer(ggml_backend_reg_get_default_buffer_type(cur->type), _position.size() * sizeof(float));
+        struct ggml_tallocr allocr = ggml_tallocr_new(buffer);
+        ggml_tallocr_alloc(&allocr, position);
+
         ggml_backend_tensor_set(
-                position_embedding, position.data(), 0,
-                ggml_nelements(position_embedding) * sizeof(float));
+                position, _position.data(), 0,
+                ggml_nelements(position) * sizeof(float));
     }
+
+    cur = ggml_add(ctx0, position, cur);
 
     static int iter = 0;
 
