@@ -12,8 +12,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall")
 set(SOURCE_FILES
         sense-voice/csrc/common.h
         sense-voice/csrc/common.cc
-        sense-voice/csrc/sense-voice-small.h
-        sense-voice/csrc/sense-voice-small.cc
+        sense-voice/csrc/sense-voice-encoder.h
+        sense-voice/csrc/sense-voice-encoder.cc
+        sense-voice/csrc/sense-voice.h
+        sense-voice/csrc/sense-voice.cc
 )
 
 option(SENSEVOICE_BUILD_TESTS "sense-voice: build tests" OFF)
