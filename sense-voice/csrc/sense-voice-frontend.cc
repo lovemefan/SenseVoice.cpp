@@ -3,11 +3,9 @@
 //
 
 #include "sense-voice-frontend.h"
-
 #include <algorithm>
 #include <cassert>
 #include <string>
-
 #include "ThreadPool.h"
 #include "log-mel-filter-bank.h"
 
@@ -17,13 +15,14 @@
 // In FFT, we frequently use sine and cosine operations with the same values.
 // We can use precalculated values to speed up the process.
 std::vector<int32_t> ip_(2 + std::sqrt(SIN_COS_N_COUNT / 2));
-std::vector<double> w_(SIN_COS_N_COUNT / 2);
+std::vector<float> w_(SIN_COS_N_COUNT / 2);
 
 // see fftsg.cc
 void rdft(int n, int isgn, double *a, int *ip, double *w);
-static void rfft(const std::vector<double> &in) {
+
+static void rfft(const std::vector<float> &in) {
   int32_t n = in.size();
-  rdft(n, 1, (double *)in.data(), ip_.data(), w_.data());
+  rdft(n, 1, (double *)in.data(), ip_.data(), (double *)w_.data());
 }
 
 inline int32_t round_to_nearest_power_two(int32_t n) {
@@ -38,7 +37,7 @@ inline int32_t round_to_nearest_power_two(int32_t n) {
 }
 
 static bool hamming_window(int length, bool periodic,
-                           std::vector<double> &output) {
+                           std::vector<float> &output) {
   if (output.size() < static_cast<size_t>(length)) {
     output.resize(length);
   }
@@ -95,7 +94,7 @@ void load_cmvn(const char *filename, sense_voice_cmvn &cmvn) {
 
 static void lrf_cmvn_worker_thread(
     int ith, sense_voice_feature &mel, sense_voice_cmvn &cmvn,
-    std::vector<std::vector<double>> &out_feats) {
+    std::vector<std::vector<float>> &out_feats) {
   // tapply lrf, merge lfr_m frames as one,lfr_n frames per window
   // ref:
   // https://github.com/alibaba-damo-academy/FunASR/blob/main/runtime/onnxruntime/src/sense_voice.cpp#L409-L440
@@ -107,7 +106,7 @@ static void lrf_cmvn_worker_thread(
   int left_pad_offset = (lfr_m - left_pad) * mel.n_mel;
   // Merge lfr_m frames as one,lfr_n frames per window
   T = T + (lfr_m - 1) / 2;
-  std::vector<double> p;
+  std::vector<float> p;
   for (int i = 0; i < T_lrf; i++) {
     // the first frames need left padding
     if (i == 0) {
@@ -151,15 +150,15 @@ static void lrf_cmvn_worker_thread(
 }
 
 static void fbank_feature_worker_thread(int ith,
-                                        const std::vector<double> &hamming,
-                                        const std::vector<double> &samples,
+                                        const std::vector<float> &hamming,
+                                        const std::vector<float> &samples,
                                         int n_samples, int frame_size,
                                         int frame_step, int n_threads,
                                         sense_voice_feature &mel) {
   // make sure n_fft == 1 + (sense_voice_N_FFT / 2), bin_0 to bin_nyquist
   int i = ith;
 
-  std::vector<double> window;
+  std::vector<float> window;
   const int padded_window_size = round_to_nearest_power_two(frame_size);
   window.resize(padded_window_size);
   // calculate FFT only when fft_in are not all zero
@@ -213,7 +212,7 @@ static void fbank_feature_worker_thread(int ith,
       auto num_fft_bins = padded_window_size / 2;
       int n_mel = mel.n_mel;
       for (int j = 0; j < n_mel; j++) {
-        double sum = 0.0;
+        float sum = 0.0;
         for (int k = 0; k < num_fft_bins; k++) {
           sum += window[k] * LogMelFilterMelArray[j * num_fft_bins + k];
         }
@@ -226,7 +225,7 @@ static void fbank_feature_worker_thread(int ith,
   }
 }
 
-bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
+bool fbank_lfr_cmvn_feature(const std::vector<float> &samples,
                             const int n_samples, const int frame_size,
                             const int frame_step, const int n_mel,
                             const int n_threads, const bool debug,
@@ -239,7 +238,7 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
                    (frame_step * n_frames_per_ms));
   mel.data.resize(mel.n_mel * mel.n_len);
 
-  std::vector<double> hamming;
+  std::vector<float> hamming;
   hamming_window(frame_size * n_frames_per_ms, true, hamming);
 
   {
@@ -266,7 +265,7 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
   //        outFile.close();
   //    }
 
-  std::vector<std::vector<double>> out_feats;
+  std::vector<std::vector<float>> out_feats;
 
   // tapply lrf, merge lfr_m frames as one,lfr_n frames per window
   // ref:
@@ -279,7 +278,7 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
   int left_pad_offset = (lfr_m - left_pad) * mel.n_mel;
   // Merge lfr_m frames as one,lfr_n frames per window
   T = T + (lfr_m - 1) / 2;
-  std::vector<double> p;
+  std::vector<float> p;
   for (int i = 0; i < T_lrf; i++) {
     // the first frames need left padding
     if (i == 0) {
@@ -325,7 +324,7 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
 }
 
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
-                   std::vector<double> &data) {
+                   std::vector<float> &data) {
   struct WaveHeader header {};
 
   std::ifstream is(filename, std::ifstream::binary);
@@ -363,7 +362,7 @@ bool load_wav_file(const char *filename, int32_t *sampling_rate,
     //        float scale = 32768;
     float scale = 1;
     for (int32_t i = 0; i != speech_len; ++i) {
-      data[i] = (double)speech_buff[i] / scale;
+      data[i] = (float)speech_buff[i] / scale;
     }
     return true;
   } else {
