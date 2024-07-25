@@ -3,15 +3,18 @@
 //
 #include "sense-voice.h"
 #include "sense-voice-encoder.h"
+#include "sense-voice-decoder.h"
+#include "sense-voice-cmvn.h"
 #include "common.h"
 #include <ggml.h>
+#include <cassert>
 #ifdef GGML_USE_METAL
 #include "ggml-metal.h"
 #endif
-
+#include <thread>
 #ifdef GGML_USE_CUDA
 #include "ggml-cuda.h"
-#include "whisper-mel-cuda.hpp"
+#include "sense_voice-mel-cuda.hpp"
 #endif
 
 #ifdef GGML_USE_SYCL
@@ -22,7 +25,9 @@
 #include "ggml-vulkan.h"
 #endif
 #define SENSE_VOICE_MAX_NODES 8192
-
+#define SENSE_VOICE_MAX_DECODERS 8
+#define SENSE_VOICE_CHUNK_SIZE 9600
+#define SENSE_VOICE_FEATURES_DIM 560
 int sense_voice_lang_id(const char * lang) {
     if (!g_lang.count(lang)) {
         for (const auto & kv : g_lang) {
@@ -346,9 +351,9 @@ static ggml_backend_t sense_voice_backend_init(
 
 void sense_voice_free_state(struct sense_voice_state *state) {
     if (state) {
-#ifdef WHISPER_USE_COREML
+#ifdef SENSE_VOICE_USE_COREML
         if (state->ctx_coreml != nullptr) {
-            whisper_coreml_free(state->ctx_coreml);
+            sense_voice_coreml_free(state->ctx_coreml);
             state->ctx_coreml = nullptr;
         }
 #endif
@@ -403,6 +408,18 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
         return nullptr;
     }
 
+    // set input
+    {
+        // init features
+        state->feature.n_len_org = SENSE_VOICE_CHUNK_SIZE;
+        state->feature.n_len =SENSE_VOICE_CHUNK_SIZE;
+        state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
+        state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx,
+                                                   GGML_TYPE_F32,
+                                                   SENSE_VOICE_FEATURES_DIM,
+                                                   state->feature.n_len);
+    }
+
 #ifdef USE_COREML
     const auto path_coreml = PARAFORMER_get_coreml_path_encoder(ctx->path_model);
 
@@ -426,6 +443,7 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
 
     state->logits_id.reserve(ctx->model.hparams.n_vocab);
 
+
     // encoder allocator
     {
         bool ok = sense_voice_allocr_graph_init(
@@ -445,12 +463,38 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
 
     // todo decoder allocator
     {
-        //    SENSE_VOICE_LOG_INFO(
-        //        "%s: compute buffer (decode) = %7.2f MB\n", __func__,
-        //        paraformer_allocr_size(state->alloc_decode) / 1024.0 / 1024.0);
+        bool ok = sense_voice_allocr_graph_init(
+                state->alloc_decode, state->backend,
+                [&]() { return sense_voice_build_graph_ctc_decoder(*ctx, *state); });
+
+        if (!ok) {
+            SENSE_VOICE_LOG_ERROR("%s: failed to init encode allocator\n", __func__);
+            sense_voice_free_state(state);
+            return nullptr;
+        }
+
+        SENSE_VOICE_LOG_INFO("%s: compute buffer (all)   = %7.2f MB\n", __func__,
+                             sense_voice_allocr_size(state->alloc_encode) / 1e6);
     }
 
     return state;
+}
+
+//  500 -> 00:05.000
+// 6000 -> 01:00.000
+static std::string to_timestamp(int64_t t, bool comma = false) {
+    int64_t msec = t * 10;
+    int64_t hr = msec / (1000 * 60 * 60);
+    msec = msec - hr * (1000 * 60 * 60);
+    int64_t min = msec / (1000 * 60);
+    msec = msec - min * (1000 * 60);
+    int64_t sec = msec / 1000;
+    msec = msec - sec * 1000;
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%02d:%02d:%02d%s%03d", (int) hr, (int) min, (int) sec, comma ? "," : ".", (int) msec);
+
+    return std::string(buf);
 }
 
 struct sense_voice_context * sense_voice_small_init_from_file_with_params(const char * path_model, struct sense_voice_context_params params) {
@@ -466,4 +510,197 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params(const 
 //    }
 
     return ctx;
+}
+
+
+int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
+                                          struct sense_voice_state * state,
+                                          std::vector<float> pcmf32,
+                                          int n_samples,
+                                          int n_threads) {
+    const int64_t t_start_us = ggml_time_us();
+
+    struct sense_voice_cmvn cmvn;
+    cmvn.cmvn_means = std::vector<float>(CMVN_MEANS, CMVN_MEANS + cmvn_length);
+    cmvn.cmvn_vars = std::vector<float>(CMVN_VARS, CMVN_VARS + cmvn_length);
+    fbank_lfr_cmvn_feature(pcmf32, pcmf32.size(),
+                           state->feature.frame_size,
+                           state->feature.frame_step,
+                           state->feature.n_mel,
+                           n_threads, true, cmvn, state->feature);
+
+    state->t_feature_us = ggml_time_us() - t_start_us;
+
+    // set input
+    {
+        // init features
+        state->feature.n_len_org = state->feature.data.size();
+        state->feature.n_len = state->feature.data.size() / state->feature.n_mel;
+        state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
+        state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx, GGML_TYPE_F32, state->feature.n_len, state->feature.n_mel);
+        state->feature.buffer = ggml_backend_alloc_buffer(state->backend,
+                                                          ggml_nbytes(state->feature.tensor) + ggml_backend_get_alignment(state->backend));
+        auto alloc = ggml_tallocr_new(state->feature.buffer);
+        ggml_tallocr_alloc(&alloc, state->feature.tensor);
+
+        auto &feature = state->feature.tensor;
+        const int n_ctx = state->feature.n_len;
+
+        assert(state->feature.n_mel == ctx->model.hparams.n_mels);
+
+        ggml_backend_tensor_set(feature, state->feature.data.data(), 0,
+                                ggml_nelements(feature) * sizeof(float));
+    }
+    SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
+                         state->t_feature_us / 1000.0);
+    return 0;
+}
+
+
+int sense_voice_full_with_state(
+        struct sense_voice_context * ctx,
+        struct sense_voice_state * state,
+        struct sense_voice_full_params params,
+        std::vector<float> pcmf32,
+        int   n_samples) {
+    // clear old results
+    auto & result_all = state->result_all;
+    result_all.clear();
+
+    // compute features (fbank + cmvn)
+    if (n_samples > 0) {
+        sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, n_samples, params.n_threads);
+    }
+    // initialize the decoders
+    int n_decoders = 1;
+
+    switch (params.strategy) {
+        case SENSE_VOICE_SAMPLING_GREEDY:
+        {
+            n_decoders = params.greedy.best_of;
+        } break;
+        case SENSE_VOICE_SAMPLING_BEAM_SEARCH:
+        {
+            n_decoders = std::max(params.greedy.best_of, params.beam_search.beam_size);
+        } break;
+    };
+
+    if (n_decoders > SENSE_VOICE_MAX_DECODERS) {
+        SENSE_VOICE_LOG_ERROR("%s: too many decoders requested (%d), max = %d\n", __func__, n_decoders, SENSE_VOICE_MAX_DECODERS);
+        return -4;
+    }
+
+    // overwrite audio_ctx, max allowed is hparams.n_audio_ctx
+    if (params.audio_ctx > ctx->model.hparams.n_audio_ctx) {
+        SENSE_VOICE_LOG_ERROR("%s: audio_ctx is larger than the maximum allowed (%d > %d)\n", __func__, params.audio_ctx, ctx->model.hparams.n_audio_ctx);
+        return -5;
+    }
+    state->exp_n_audio_ctx = params.audio_ctx;
+
+    // encode audio features starting at offset seek
+    if (!sense_voice_encode_internal(*ctx, *state, params.n_threads)) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
+        return -6;
+    }
+    
+}
+
+int sense_voice_full_parallel(struct sense_voice_context * ctx,
+                              sense_voice_full_params params,
+                              std::vector<float> pcmf32,
+                              int n_samples,
+                              int n_processors){
+    if (n_processors == 1) {
+        return sense_voice_full_with_state(ctx, ctx->state, params, pcmf32, n_samples);
+    }
+    int ret = 0;
+    
+    // prepare separate states for each thread
+    std::vector<sense_voice_state*> states;
+
+    const int offset_samples = (SENSE_VOICE_SAMPLE_RATE*params.offset_ms)/1000;
+    const int n_samples_per_processor = (n_samples - offset_samples)/n_processors;
+
+    // the calling thread will process the first chunk
+    // while the other threads will process the remaining chunks
+
+    std::vector<std::thread> workers(n_processors - 1);
+    for (int i = 0; i < n_processors - 1; ++i) {
+        // create a new state for each thread
+        states.push_back(sense_voice_init_state(ctx));
+
+        const int start_samples = offset_samples + (i + 1)*n_samples_per_processor;
+        const int n_samples_cur = (i == n_processors - 2) ? n_samples - start_samples : n_samples_per_processor;
+
+        auto params_cur = params;
+
+        params_cur.offset_ms = 0;
+        params_cur.print_progress = false;
+
+        params_cur.progress_callback = nullptr;
+        params_cur.progress_callback_user_data = nullptr;
+
+        workers[i] = std::thread(sense_voice_full_with_state, ctx, states[i], std::move(params_cur), pcmf32, n_samples_cur);
+    }
+
+    {
+        auto params_cur = params;
+
+        // Run the first transformation using default state but only for the first chunk.
+        ret = sense_voice_full_with_state(ctx, ctx->state, std::move(params_cur), pcmf32, offset_samples + n_samples_per_processor);
+    }
+
+    for (int i = 0; i < n_processors - 1; ++i) {
+        workers[i].join();
+    }
+
+    const int64_t offset_t = (int64_t) params.offset_ms/10.0;
+
+    // combine results into result_state->result_all from all other states
+    for (int i = 0; i < n_processors - 1; ++i) {
+        auto& results_i = states[i]->result_all;
+
+        for (auto& result : results_i) {
+            // correct the segment timestamp taking into account the offset
+            result.t0 += 100 * ((i + 1) * n_samples_per_processor) / SENSE_VOICE_SAMPLE_RATE + offset_t;
+            result.t1 += 100 * ((i + 1) * n_samples_per_processor) / SENSE_VOICE_SAMPLE_RATE + offset_t;
+
+            // make sure that segments are not overlapping
+            if (!ctx->state->result_all.empty()) {
+                result.t0 = std::max(result.t0, ctx->state->result_all.back().t1);
+            }
+
+            ctx->state->result_all.push_back(std::move(result));
+
+        }
+
+
+        ctx->state->t_sample_us += states[i]->t_sample_us;
+        ctx->state->t_encode_us += states[i]->t_encode_us;
+        ctx->state->t_decode_us += states[i]->t_decode_us;
+        ctx->state->t_prompt_us += states[i]->t_prompt_us;
+
+        ctx->state->n_sample += states[i]->n_sample;
+        ctx->state->n_encode += states[i]->n_encode;
+        ctx->state->n_decode += states[i]->n_decode;
+        ctx->state->n_prompt += states[i]->n_prompt;
+
+        sense_voice_free_state(states[i]);
+    }
+
+    // average the timings
+    ctx->state->t_feature_us    /= n_processors;
+    ctx->state->t_sample_us /= n_processors;
+    ctx->state->t_encode_us /= n_processors;
+    ctx->state->t_decode_us /= n_processors;
+
+    // print information about the audio boundaries
+    SENSE_VOICE_LOG_WARN("\n");
+    SENSE_VOICE_LOG_WARN("%s: the audio has been split into %d chunks at the following times:\n", __func__, n_processors);
+    for (int i = 0; i < n_processors - 1; ++i) {
+        SENSE_VOICE_LOG_WARN("%s: split %d - %s\n", __func__, (i + 1), to_timestamp(100*((i + 1)*n_samples_per_processor)/SENSE_VOICE_SAMPLE_RATE + offset_t).c_str());
+    }
+    SENSE_VOICE_LOG_WARN("%s: the transcription quality may be degraded near these boundaries\n", __func__);
+
+    return ret;
 }
