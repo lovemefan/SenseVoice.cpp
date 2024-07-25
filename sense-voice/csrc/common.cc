@@ -51,6 +51,7 @@ struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_
             /*.strategy          =*/ strategy,
 
             /*.n_threads         =*/ std::min(4, (int32_t) std::thread::hardware_concurrency()),
+            /* language          =*/ "auto",
             /*.n_max_text_ctx    =*/ 16384,
             /*.offset_ms         =*/ 0,
             /*.duration_ms       =*/ 0,
@@ -62,6 +63,7 @@ struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_
 
 
             /*.debug_mode        =*/ false,
+            /* audio_ctx         =*/ 0,
 
             /*.greedy            =*/ {
                     /*.best_of   =*/ -1,
@@ -93,4 +95,3 @@ struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_
 
     return result;
 }
-

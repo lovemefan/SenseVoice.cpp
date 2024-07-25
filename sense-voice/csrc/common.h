@@ -180,8 +180,6 @@ void sense_voice_log_callback_default(ggml_log_level level, const char * text, v
         } \
     } while (0)
 
-#define SENSEVOICE_MAX_NODES 4096
-
 struct sense_voice_global {
     // We save the log callback globally
     ggml_log_callback log_callback = sense_voice_log_callback_default;
@@ -314,7 +312,7 @@ struct sense_voice_state {
     int64_t t_encode_us = 0;
     int64_t t_decode_us = 0;
     int64_t t_prompt_us = 0;
-    int64_t t_mel_us = 0;
+    int64_t t_feature_us = 0;
 
     int32_t n_sample = 0;  // number of tokens sampled
     int32_t n_encode = 0;  // number of encoder calls
@@ -341,7 +339,7 @@ struct sense_voice_state {
     sense_voice_allocr alloc_decode;
 
     // result of the encoder
-    struct ggml_tensor *embd_enc = nullptr;
+    struct ggml_tensor *encoder_out = nullptr;
 
     // decode output (2-dimensional array: [n_tokens][n_vocab])
     std::vector<float> logits;
@@ -384,6 +382,7 @@ enum sense_voice_decoding_strategy {
 struct sense_voice_full_params {
     enum sense_voice_decoding_strategy strategy;
     int n_threads;
+    const char *language;
     int n_max_text_ctx;  // max tokens to use from past text as prompt for the
                           // decoder
     int offset_ms;       // start offset in ms
@@ -396,6 +395,7 @@ struct sense_voice_full_params {
                           // printing realtime
 
     bool debug_mode;  // enable debug_mode provides extra info (eg. Dump log_mel)
+    int  audio_ctx;
 
     struct {
         int best_of;
