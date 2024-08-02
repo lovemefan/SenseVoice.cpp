@@ -22,6 +22,7 @@ struct sense_voice_params {
     int32_t progress_step = 5;
     int32_t max_context   = -1;
     int32_t max_len       = 0;
+    int32_t n_mel       = 80;
     int32_t best_of       = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY).greedy.best_of;
     int32_t beam_size     = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_BEAM_SEARCH).beam_search.beam_size;
     int32_t audio_ctx     = 0;
@@ -69,6 +70,47 @@ struct sense_voice_params {
     std::vector<std::string> fname_out = {};
 
 };
+
+static int sense_voice_has_coreml(void) {
+#ifdef SENSE_VOICE_USE_COREML
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static int sense_voice_has_openvino(void) {
+#ifdef SENSE_VOICE_USE_OPENVINO
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+const char * sense_voice_print_system_info(void) {
+    static std::string s;
+
+    s  = "";
+    s += "AVX = "       + std::to_string(ggml_cpu_has_avx())       + " | ";
+    s += "AVX2 = "      + std::to_string(ggml_cpu_has_avx2())      + " | ";
+    s += "AVX512 = "    + std::to_string(ggml_cpu_has_avx512())    + " | ";
+    s += "FMA = "       + std::to_string(ggml_cpu_has_fma())       + " | ";
+    s += "NEON = "      + std::to_string(ggml_cpu_has_neon())      + " | ";
+    s += "ARM_FMA = "   + std::to_string(ggml_cpu_has_arm_fma())   + " | ";
+    s += "METAL = "     + std::to_string(ggml_cpu_has_metal())     + " | ";
+    s += "F16C = "      + std::to_string(ggml_cpu_has_f16c())      + " | ";
+    s += "FP16_VA = "   + std::to_string(ggml_cpu_has_fp16_va())   + " | ";
+    s += "WASM_SIMD = " + std::to_string(ggml_cpu_has_wasm_simd()) + " | ";
+    s += "BLAS = "      + std::to_string(ggml_cpu_has_blas())      + " | ";
+    s += "SSE3 = "      + std::to_string(ggml_cpu_has_sse3())      + " | ";
+    s += "SSSE3 = "     + std::to_string(ggml_cpu_has_ssse3())     + " | ";
+    s += "VSX = "       + std::to_string(ggml_cpu_has_vsx())       + " | ";
+    s += "CUDA = "      + std::to_string(ggml_cpu_has_cuda())      + " | ";
+    s += "COREML = "    + std::to_string(sense_voice_has_coreml()) + " | ";
+    s += "OPENVINO = "  + std::to_string(sense_voice_has_openvino());
+
+    return s.c_str();
+}
 
 static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voice_params & params) {
     fprintf(stderr, "\n");
@@ -187,7 +229,7 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-oj"   || arg == "--output-json")     { params.output_jsn      = true; }
         else if (arg == "-ojf"  || arg == "--output-json-full"){ params.output_jsn_full = params.output_jsn = true; }
         else if (arg == "-of"   || arg == "--output-file")     { params.fname_out.emplace_back(argv[++i]); }
-        else if (arg == "-np"   || arg == "--no-prints")       { params.no_prints       = true; }
+        else if (arg == "-np"   || arg == "--no-prints")       { params.no_prints       = false; }
         else if (arg == "-ps"   || arg == "--print-special")   { params.print_special   = true; }
         else if (arg == "-pc"   || arg == "--print-colors")    { params.print_colors    = true; }
         else if (arg == "-pp"   || arg == "--print-progress")  { params.print_progress  = true; }
@@ -223,7 +265,7 @@ static bool is_file_exist(const char *fileName)
 int main(int argc, char ** argv) {
     sense_voice_params params;
 
-    if (sense_voice_params_parse(argc, argv, params) == false) {
+    if (!sense_voice_params_parse(argc, argv, params)) {
         sense_voice_print_usage(argc, argv, params);
         return 1;
     }
@@ -262,5 +304,69 @@ int main(int argc, char ** argv) {
 
     struct sense_voice_context * ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
 
+    if (ctx == nullptr) {
+        fprintf(stderr, "error: failed to initialize sense voice context\n");
+        return 3;
+    }
 
+    for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
+        const auto fname_inp = params.fname_inp[f];
+        const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
+
+        std::vector<double> pcmf32;               // mono-channel F32 PCM
+
+
+        int sample_rate;
+        if (!::load_wav_file(fname_inp.c_str(), &sample_rate, pcmf32)) {
+            fprintf(stderr, "error: failed to read WAV file '%s'\n", fname_inp.c_str());
+            continue;
+        }
+
+        if (!params.no_prints) {
+            // print system information
+            fprintf(stderr, "\n");
+            fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
+                    params.n_threads*params.n_processors, std::thread::hardware_concurrency(), sense_voice_print_system_info());
+
+            // print some info about the processing
+            fprintf(stderr, "\n");
+            fprintf(stderr, "%s: processing audio (%d samples, %.5f sec) , %d threads, %d processors, lang = %s...\n",
+                    __func__,  int(pcmf32.size()), float(pcmf32.size())/sample_rate,
+                    params.n_threads, params.n_processors,
+                    params.language.c_str());
+
+            fprintf(stderr, "\n");
+        }
+
+        sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
+        // run inference
+        {
+
+            wparams.strategy = (params.beam_size > 1 ) ? SENSE_VOICE_SAMPLING_BEAM_SEARCH : SENSE_VOICE_SAMPLING_GREEDY;
+
+            wparams.print_progress   = params.print_progress;
+            wparams.print_timestamps = !params.no_timestamps;
+            wparams.language         = params.language.c_str();
+            wparams.n_threads        = params.n_threads;
+            wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
+            wparams.offset_ms        = params.offset_t_ms;
+            wparams.duration_ms      = params.duration_ms;
+
+            wparams.debug_mode       = params.debug_mode;
+
+            wparams.greedy.best_of        = params.best_of;
+            wparams.beam_search.beam_size = params.beam_size;
+
+            wparams.no_timestamps    = params.no_timestamps;
+
+            if (sense_voice_full_parallel(ctx, wparams, pcmf32, pcmf32.size(), params.n_processors) != 0) {
+                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                return 10;
+            }
+            fprintf(stderr, "%s: sense_voice_full_parallel after\n", __func__ );
+        }
+        fprintf(stderr, "%s: sense_voice_full_parallel after 2\n", __func__ );
+    }
+    fprintf(stderr, "tests .................");
+    return 0;
 }
