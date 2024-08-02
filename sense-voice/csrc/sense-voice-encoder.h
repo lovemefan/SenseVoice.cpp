@@ -18,8 +18,14 @@ struct sense_voice_layer_encoder {
     struct ggml_tensor *e_attn_ln_out_b;
 
     // encoder.self_attn.linear_q_k_v.weight
-    struct ggml_tensor *e_attn_ln_qkv_w;
-    struct ggml_tensor *e_attn_ln_qkv_b;
+    struct ggml_tensor *e_attn_ln_q_w;
+    struct ggml_tensor *e_attn_ln_q_b;
+
+    struct ggml_tensor *e_attn_ln_k_w;
+    struct ggml_tensor *e_attn_ln_k_b;
+
+    struct ggml_tensor *e_attn_ln_v_w;
+    struct ggml_tensor *e_attn_ln_v_b;
 
     // encoder.self_attn.fsmn_block.weight
     struct ggml_tensor *e_attn_fsmn_w;
@@ -84,5 +90,9 @@ SENSEVOICE_API void sense_voice_free_params(
 bool set_sense_voice_encoder_layer_sanm(
         std::vector<sense_voice_layer_encoder> &layer, std::map<std::string,
         struct ggml_tensor *> &tensors, int n_encoder_layers, std::string prefix);
+
+bool sense_voice_encode_internal(sense_voice_context &ctx,
+                            sense_voice_state &state,
+                            const int n_threads);
 
 #endif//SENSEVOICE_CPP_SENSE_VOICE_ENCODER_H

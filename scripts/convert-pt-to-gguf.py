@@ -247,57 +247,70 @@ class SenseVoiceSmall(Model):
             f"encoder.sanm_shfit", self.find_hparam("encoder_conf.sanm_shfit")
         )
 
+    def write_one_tensor(self, data_torch, name):
+        old_dtype = data_torch.dtype
+
+        # convert any unsupported data types to float32
+        if data_torch.dtype not in (torch.float16, torch.float32):
+            data_torch = data_torch.to(torch.float32)
+
+        _data = data_torch.squeeze().numpy()
+        # use max to avoid n_dim of single tensor become 0
+        if len(_data.shape) != 0:
+            data = _data
+        else:
+            data = data_torch.numpy()
+
+        n_dims = len(data.shape)
+        data_dtype = data.dtype
+
+        # if f32 desired, convert any float16 to float32
+        if self.ftype == 0 and data_dtype == np.float16:
+            data = data.astype(np.float32)
+
+        # TODO: Why cant we use these float16 as-is? There should be not reason to store float16 as float32
+        if self.ftype == 1 and data_dtype == np.float16 and n_dims == 1:
+            data = data.astype(np.float32)
+
+        # if f16 desired, convert any float32 2-dim weight tensors to float16
+        if (
+                self.ftype == 1
+                and data_dtype == np.float32
+                and name.endswith(".weight")
+                and n_dims == 2
+        ):
+            data = data.astype(np.float16)
+
+
+        print(
+            f"|{name}| n_dims = {n_dims}| {old_dtype} | {data.dtype} | {data.size}|"
+        )
+
+        self.gguf_writer.add_tensor(name, data)
+        return data.size
+
     def write_tensors(self):
         tensor_size = 0
+
+        print(
+            "| Layer name | n_dims | torch type | gguf type | parameters size|"
+        )
+        print("|:|:|:|:|:|")
         for name, data_torch in self.get_tensors():
             # we don't need these
             if name.endswith(("Loss", "loss")):
                 continue
 
-            old_dtype = data_torch.dtype
+            if 'linear_q_k_v' in name:
 
-            # convert any unsupported data types to float32
-            if data_torch.dtype not in (torch.float16, torch.float32):
-                data_torch = data_torch.to(torch.float32)
+                q_k_v = data_torch.split(data_torch.size(0) // 3)
+                tensor_size += self.write_one_tensor(q_k_v[0], name.replace('linear_q_k_v', 'linear_q'))
+                tensor_size += self.write_one_tensor(q_k_v[1], name.replace('linear_q_k_v', 'linear_k'))
+                tensor_size += self.write_one_tensor(q_k_v[2], name.replace('linear_q_k_v', 'linear_v'))
 
-            _data = data_torch.squeeze().numpy()
-            # use max to avoid n_dim of single tensor become 0
-            if len(_data.shape) != 0:
-                data = _data
             else:
-                data = data_torch.numpy()
+                tensor_size += self.write_one_tensor(data_torch, name)
 
-            n_dims = len(data.shape)
-            data_dtype = data.dtype
-
-            # if f32 desired, convert any float16 to float32
-            if self.ftype == 0 and data_dtype == np.float16:
-                data = data.astype(np.float32)
-
-            # TODO: Why cant we use these float16 as-is? There should be not reason to store float16 as float32
-            if self.ftype == 1 and data_dtype == np.float16 and n_dims == 1:
-                data = data.astype(np.float32)
-
-            # if f16 desired, convert any float32 2-dim weight tensors to float16
-            if (
-                self.ftype == 1
-                and data_dtype == np.float32
-                and name.endswith(".weight")
-                and n_dims == 2
-            ):
-                data = data.astype(np.float16)
-
-            if tensor_size == 0:
-                print(
-                    "| Layer name | n_dims | torch type | gguf type | parameters size|"
-                )
-                print("|:|:|:|:|:|")
-
-            print(
-                f"|{name}| n_dims = {n_dims}| {old_dtype} | {data.dtype} | {data.size}|"
-            )
-            tensor_size += data.size
-            self.gguf_writer.add_tensor(name, data)
         print(f"\ntotal size is {tensor_size}")
 
 
@@ -321,7 +334,7 @@ def parse_args() -> argparse.Namespace:
         "--out_type",
         type=str,
         choices=["f32", "f16"],
-        default="f16",
+        default="f32",
         help="output format - use f32 for float32, f16 for float16",
     )
     parser.add_argument(
