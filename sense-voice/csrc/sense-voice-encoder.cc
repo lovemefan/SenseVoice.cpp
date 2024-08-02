@@ -8,19 +8,32 @@
 
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
-#ifdef GGML_USE_CUDA
-#include "ggml-cuda.h"
-#include "sense-voice-frontend.h"
-#endif
 #ifdef GGML_USE_METAL
 #include "ggml-metal.h"
+#endif
+
+#ifdef GGML_USE_CUDA
+#include "ggml-cuda.h"
+#include "whisper-mel-cuda.hpp"
+#endif
+
+#ifdef GGML_USE_SYCL
+#include "ggml-sycl.h"
+#endif
+
+#ifdef GGML_USE_VULKAN
+#include "ggml-vulkan.h"
+#endif
+
+#ifdef GGML_USE_BLAS
+#include <ggml-blas.h>
 #endif
 
 #include <assert.h>
 #include <map>
 #include <string>
 #include <vector>
-
+#define SENSE_VOICE_ENCODER_MAX_NODES 4096
 
 
 static const size_t MB = 1ull * 1024 * 1024;
@@ -93,6 +106,34 @@ static ggml_backend_t sense_voice_backend_init(
 }
 
 
+static bool ggml_graph_compute_helper(
+        ggml_backend_sched_t   sched,
+        struct ggml_cgraph * graph,
+        int   n_threads) {
+
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
+        ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
+        if (ggml_backend_is_cpu(backend)) {
+            ggml_backend_cpu_set_n_threads(backend, n_threads);
+        }
+#ifdef GGML_USE_BLAS
+        if (ggml_backend_is_blas(backend)) {
+            ggml_backend_blas_set_n_threads(backend, n_threads);
+        }
+#endif
+
+#ifdef GGML_USE_METAL
+        if (ggml_backend_is_metal(backend)) {
+            ggml_backend_metal_set_n_cb(backend, n_threads);
+        }
+#endif
+    }
+
+    bool t = ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS;
+    ggml_backend_sched_reset(sched);
+    return t;
+}
+
 struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml_context *ctx0, ggml_tensor *cur, sense_voice_layer_encoder &layer){
 
     const int n_state = hparams.n_encoder_hidden_state;
@@ -117,9 +158,6 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
     // self attention
     {
         // self attention linear qkv
-        cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_qkv_w, cur),
-                       layer.e_attn_ln_qkv_b);
-        // cur [1536, 1600]
         //      cur = ggml_transpose(ctx0, cur);
         // split qkv into separate tensors
         // q, k, v = torch.split(q_k_v, int(self.h * self.d_k), dim=-1)
@@ -131,44 +169,66 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
         struct ggml_tensor *V_h;
 
         int n_ctx = cur->ne[1];
-        Q = ggml_cpy(ctx0,
-                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                  0 * n_state * cur->nb[0]),
-                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-        Q = ggml_reshape_4d(ctx0, Q, n_state / n_head, n_head, n_ctx, 1);
-        Q = ggml_cont(ctx0, ggml_permute(ctx0, Q, 0, 2, 1, 3));
-        //      Q = ggml_reshape_3d(ctx0, Q, n_state / n_head, n_ctx, n_head);
 
-        K = ggml_cpy(ctx0,
-                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                  1 * n_state * cur->nb[0]),
-                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
+        Q = ggml_add(ctx0,
+                     ggml_mul_mat(ctx0, layer.e_attn_ln_q_w, cur),
+                     layer.e_attn_ln_q_b);
 
-        K = ggml_reshape_4d(ctx0, K, n_state / n_head, n_head, n_ctx, 1);
-        K = ggml_cont(ctx0, ggml_permute(ctx0, K, 0, 2, 1, 3));
+        Q = ggml_reshape_4d(ctx0, Q, n_state / n_head, n_ctx, n_head, 1);
+        Q = ggml_cont(ctx0, Q);
+
+        ggml_set_name(Q, "attention_Q");
+
+        K = ggml_add(ctx0,
+                     ggml_mul_mat(ctx0, layer.e_attn_ln_k_w, cur),
+                     layer.e_attn_ln_k_b);
+
+        K = ggml_reshape_4d(ctx0, K, n_state / n_head, n_ctx, n_head, 1);
+        K = ggml_cont(ctx0, K);
         //      K = ggml_reshape_3d(ctx0, K, n_state, n_ctx, n_head);
+        ggml_set_name(K, "attention_K");
 
-        V = ggml_cpy(ctx0,
-                     ggml_view_2d(ctx0, cur, n_state, n_ctx, cur->nb[1],
-                                  2 * n_state * cur->nb[0]),
-                     ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
-        V_h = ggml_reshape_4d(ctx0, V, n_state / n_head, n_head, n_ctx, 1);
-        V_h = ggml_cont(ctx0, ggml_permute(ctx0, V_h, 0, 2, 1, 3));  // transposed
-        //      V = ggml_reshape_3d(ctx0, V, n_state, n_ctx, n_head);
+        V = ggml_add(ctx0,
+                     ggml_mul_mat(ctx0, layer.e_attn_ln_v_w, cur),
+                     layer.e_attn_ln_v_b);
+        ggml_set_name(V, "attention_V");
+
+        V_h = ggml_reshape_4d(ctx0, V, n_state / n_head, n_ctx, n_head, 1);
+        V_h = ggml_cont(ctx0, V_h);
 
         // fsmn forward with V
-        int left_padding = (hparams.fsmn_kernel_size - 1) / 2;
-        int right_padding = hparams.fsmn_kernel_size - 1 - left_padding;
+        int padding = (hparams.fsmn_kernel_size - 1) / 2;
+
 
         struct ggml_tensor *fsmn_memory = ggml_new_tensor_2d(ctx0, V->type, V->ne[0], V->ne[1]);
 
-        // conv depth wise 1d with groups=input_channel implement
+        // conv depth wise
         {
-            fsmn_memory = ggml_conv_depthwise_2d(ctx0,
-                                     layer.e_attn_fsmn_w,
-                                     ggml_reshape_4d(ctx0, V, 1, V->ne[0], V->ne[1], V->ne[2]),
-                                     1,1,0,0,0,0);
-            fsmn_memory = ggml_reshape_3d(ctx0, fsmn_memory, V->ne[0], V->ne[1], V->ne[2]);
+            {
+                // implement conv depth wise with groups=input_channel implement
+                // same in pytorch : F.conv1d(input, weight, bias=None, stride=1, padding=1, dilation=1, groups=n_state)
+                struct ggml_tensor * a = layer.e_attn_fsmn_w;
+                struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
+
+                struct ggml_tensor * new_a = ggml_reshape_4d(ctx0,
+                                                            a,
+                                                            a->ne[0],
+                                                            1,
+                                                            a->ne[1],
+                                                            a->ne[2] * a->ne[3]);
+                // im2col [n_state, length, kernel_size ]
+                struct ggml_tensor * im2col = ggml_im2col(ctx0, new_a,
+                                                         ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
+                                                         1, 1, padding, 0, 1, 0, false, GGML_TYPE_F32);
+
+
+                // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
+                // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [n_state, length , 1]
+                struct ggml_tensor * result = ggml_mul_mat(ctx0, new_a, im2col);
+                fsmn_memory = ggml_reshape_4d(ctx0, result, im2col->ne[1], im2col->ne[2], b->ne[2], b->ne[3]);
+            }
+            fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));
+            ggml_set_name(fsmn_memory, "fsmn_memory");
             fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
         }
 
@@ -197,7 +257,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
         cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_out_w, cur),
                        layer.e_attn_ln_out_b);
 
-        // todo open when conv depth wise 1d with group implement finished
+
         cur = ggml_add(ctx0, cur, fsmn_memory);
 
         if (layer.e_norm_w1->ne[0] == layer.e_norm_w2->ne[0]) {
@@ -232,74 +292,46 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
 
 struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
                                                    sense_voice_state &pstate) {
+
     const auto &model = pctx.model.model;
     const auto &hparams = pctx.model.hparams;
     const int n_ctx =
             pstate.exp_n_audio_ctx > 0 ? pstate.exp_n_audio_ctx : hparams.n_audio_ctx;
 
     struct ggml_init_params params = {
-            /*.mem_size   =*/pstate.alloc_encode.meta.size(),
-            /*.mem_buffer =*/pstate.alloc_encode.meta.data(),
+            /*.mem_size   =*/pstate.sched_encode.meta.size(),
+            /*.mem_buffer =*/pstate.sched_encode.meta.data(),
             /*.no_alloc   =*/true,
     };
 
     struct ggml_context *ctx0 = ggml_init(params);
 
-    ggml_cgraph *gf = ggml_new_graph_custom(ctx0, SENSEVOICE_MAX_NODES, false);
+    ggml_cgraph *gf = ggml_new_graph_custom(ctx0, SENSE_VOICE_ENCODER_MAX_NODES, false);
 
-    struct ggml_tensor *fbank = ggml_new_tensor_2d(
-            ctx0, GGML_TYPE_F32, hparams.n_mels * hparams.lfr_m, n_ctx);
+    struct ggml_tensor *feature = pstate.feature.tensor;
+    ggml_set_name(feature, "feats");
+    ggml_set_input(feature);
 
-    struct ggml_tensor *embedding_position = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 4);
+    struct ggml_tensor *embedding = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 4);
+    ggml_set_name(embedding, "embedding");
+    ggml_set_input(embedding);
 
-    ggml_set_name(fbank, "fbank");
-    ggml_set_input(fbank);
+    embedding = ggml_get_rows(ctx0, model->embedding, embedding);
 
-
-    ggml_tensor *embedding = ggml_get_rows(ctx0, model->embedding, embedding_position);
-
-    struct ggml_tensor *cur = ggml_concat(ctx0, embedding, fbank, 1);
+    struct ggml_tensor *cur = ggml_concat(ctx0, embedding, feature, 1);
 
     cur = ggml_scale(ctx0, cur, sqrtf(hparams.n_encoder_hidden_state));
 
-    // todo : implement encoder small forward graph
+    // implement encoder small forward graph
+    //ref: https://github.com/modelscope/FunASR/blob/b7b4a83c18277a7022124cad790c08ae703b7a2d/funasr/models/sense_voice/model.py#L558-L583
     // [x] 1. sinusoidal position
     // [x] 2. encoders0
     // [x] 3. encoders
     // [x] 4. tp_encoders
-    // [ ] 5. tp_norm
-    // [ ] 6. linear
+    // [x] 5. tp_norm
     ggml_tensor *position = ggml_new_tensor_2d(ctx0, cur->type, cur->ne[0], cur->ne[1]);
-
-    // construct position embedding
-    {
-        auto n_len = cur->ne[1];
-        auto dim = fbank->ne[0];
-        std::vector<float> _position;
-        _position.resize(n_len * dim);
-
-        // sinusoidal position embedding
-        // reference:
-        // https://github.com/modelscope/FunASR/blob/45d7aa9004763684fb748ee17942ecba81042201/funasr/models/transformer/embedding.py#L392-L405
-        // P_{k,i} = sin(k/10000^(2i/d))  0 < i < d/2
-        // p_{k,j} = cos(k/10000^(2j/d))  d/2 < j < d
-
-        for (int k = 1; k <= n_len; k++) {
-            for (int i = 0; i < dim / 2; i++) {
-                _position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
-                _position[(k - 1) * dim + i + dim / 2] =
-                        cosf(k * pow(10000, -2.0 * i / dim));
-            }
-        }
-
-        ggml_backend_buffer_t buffer = ggml_backend_buft_alloc_buffer(ggml_backend_reg_get_default_buffer_type(cur->type), _position.size() * sizeof(float));
-        struct ggml_tallocr allocr = ggml_tallocr_new(buffer);
-        ggml_tallocr_alloc(&allocr, position);
-
-        ggml_backend_tensor_set(
-                position, _position.data(), 0,
-                ggml_nelements(position) * sizeof(float));
-    }
+    ggml_set_name(position, "position");
+    ggml_set_input(position);
 
     cur = ggml_add(ctx0, position, cur);
 
@@ -310,90 +342,111 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     for (int i=0; i < hparams.n_encoder_layers - 1; i++){
         cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoders_layer[i]);
     }
+
+    {
+        // after encoder norm
+        cur = ggml_norm(ctx0, cur, hparams.eps);
+        cur = ggml_add(ctx0, ggml_mul(ctx0,
+                                      cur,
+                                      model->encoder->e_after_norm_w),
+                       model->encoder->e_after_norm_b);
+    }
     // tp encoders forward
     for (int i=0; i < hparams.n_tp_encoder_layers; i++){
         cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->tp_encoders_layer[i]);
     }
 
-    cur = ggml_transpose(ctx0, cur);
-
-
+    {
+        // tp encoder norm
+        cur = ggml_norm(ctx0, cur, hparams.eps);
+        cur = ggml_add(ctx0, ggml_mul(ctx0,
+                                      cur,
+                                      model->encoder->e_tp_norm_w),
+                       model->encoder->e_tp_norm_b);
+    }
 
     ggml_build_forward_expand(gf, cur);
-    ggml_free(ctx0);
 
+    ggml_set_name(cur, "encoder_out");
+    ggml_set_output(cur);
+    pstate.encoder_out = cur;
+    ggml_free(ctx0);
     return gf;
 }
 
-static bool sense_voice_encode_internal(sense_voice_context &ctx,
+bool sense_voice_encode_internal(sense_voice_context &ctx,
                                        sense_voice_state &state,
                                        const int n_threads) {
     const int64_t t_start_us = ggml_time_us();
 
     const auto &model = ctx.model;
     const auto &hparams = model.hparams;
-    const int n_vocab = hparams.n_vocab;
 
-    auto &logits_out = state.logits;
-
-    struct ggml_tensor *logits;
 
     // encoder
     {
-        auto &alloc = state.alloc_encode.alloc;
+        auto & sched = state.sched_encode.sched;
 
         ggml_cgraph *gf = sense_voice_build_graph_encoder(ctx, state);
 
-        if (!ggml_gallocr_alloc_graph(alloc, gf)) {
+        if (!ggml_backend_sched_alloc_graph(sched, gf)) {
             // should never happen as we pre-allocate the memory
             return false;
         }
 
-        struct ggml_tensor *fbank = ggml_graph_get_tensor(gf, "fbank");
-        struct ggml_tensor *position_embedding =
-                ggml_graph_get_tensor(gf, "position");
 
-        // set input
+        // set the inputs
+
         {
-            auto feature = state.feature;
-            const int n_ctx = state.feature.n_len;
+            struct ggml_tensor *position = ggml_graph_get_tensor(gf, "position");
+            struct ggml_tensor *embedding = ggml_graph_get_tensor(gf, "embedding");
 
-            assert(fbank->type == GGML_TYPE_F32);
-            assert(feature.n_mel == ctx.model.hparams.n_mels);
 
-            fbank->ne[0] = feature.n_len;
-            position_embedding->ne[0] = feature.n_len;
+            auto n_len = position->ne[1];
+            auto dim = position->ne[0];
+            std::vector<float> _position;
+            _position.resize(n_len * dim);
 
-            std::vector<float> input(feature.data.begin(), feature.data.end());
-            ggml_backend_tensor_set(fbank, input.data(), 0,
-                                    ggml_nelements(fbank) * sizeof(float));
-        }
-        // construct position embedding
-        {
-            auto n_len = fbank->ne[0];
-            auto dim = fbank->ne[1];
-            std::vector<float> position;
-            position.resize(n_len * dim);
-
+            // construct position embedding
             // sinusoidal position embedding
             // reference:
             // https://github.com/modelscope/FunASR/blob/45d7aa9004763684fb748ee17942ecba81042201/funasr/models/transformer/embedding.py#L392-L405
             // P_{k,i} = sin(k/10000^(2i/d))  0 < i < d/2
-            // p_{k,j} = cos(k/10000^(2i/d))  d/2 < j < d
+            // p_{k,j} = cos(k/10000^(2j/d))  d/2 < j < d
 
             for (int k = 1; k <= n_len; k++) {
                 for (int i = 0; i < dim / 2; i++) {
-                    position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
-                    position[(k - 1) * dim + i + dim / 2] =
+                    _position[(k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
+                    _position[(k - 1) * dim + i + dim / 2] =
                             cosf(k * pow(10000, -2.0 * i / dim));
                 }
             }
+
+
+
             ggml_backend_tensor_set(
-                    position_embedding, position.data(), 0,
-                    ggml_nelements(position_embedding) * sizeof(float));
+                    position, _position.data(), 0,
+                    ggml_nelements(position) * sizeof(float));
+
+
+
+            int _embedding[4];
+            _embedding[0] = 0;
+            _embedding[1] = 1;
+            _embedding[2] = 2;
+            _embedding[3] = 14;
+
+            ggml_backend_tensor_set(embedding, &_embedding, 0, 4*sizeof(int));
+
+
+        }
+        ggml_graph_dump_dot(gf, NULL, "sense-voice.dot");
+        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+            return false;
         }
 
     }
+    state.t_encode_us += ggml_time_us() - t_start_us;
     return true;
 }
 
@@ -412,12 +465,26 @@ bool set_sense_voice_encoder_layer_sanm(std::vector<sense_voice_layer_encoder> &
                 tensors["encoder." + prefix + "." + std::to_string(i) +
                         ".self_attn.linear_out.bias"];
 
-        layer->e_attn_ln_qkv_w =
+        layer->e_attn_ln_q_w =
                 tensors["encoder." + prefix + "." + std::to_string(i) +
-                        ".self_attn.linear_q_k_v.weight"];
-        layer->e_attn_ln_qkv_b =
+                        ".self_attn.linear_q.weight"];
+        layer->e_attn_ln_q_b =
                 tensors["encoder." + prefix + "." + std::to_string(i) +
-                        ".self_attn.linear_q_k_v.bias"];
+                        ".self_attn.linear_q.bias"];
+
+        layer->e_attn_ln_k_w =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_k.weight"];
+        layer->e_attn_ln_k_b =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_k.bias"];
+
+        layer->e_attn_ln_v_w =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_v.weight"];
+        layer->e_attn_ln_v_b =
+                tensors["encoder." + prefix + "." + std::to_string(i) +
+                        ".self_attn.linear_v.bias"];
 
         layer->e_attn_fsmn_w =
                 tensors["encoder." + prefix + "." + std::to_string(i) +
