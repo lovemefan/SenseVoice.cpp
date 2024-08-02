@@ -10,8 +10,8 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
     const auto &hparams = ctx.model.hparams;
 
     struct ggml_init_params params = {
-            /*.mem_size   =*/state.alloc_decode.meta.size(),
-            /*.mem_buffer =*/state.alloc_decode.meta.data(),
+            /*.mem_size   =*/state.sched_decode.meta.size(),
+            /*.mem_buffer =*/state.sched_decode.meta.data(),
             /*.no_alloc   =*/true,
     };
 
@@ -22,11 +22,12 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
     ggml_tensor *encoder_out = state.encoder_out;
     ggml_tensor *cur;
     {
-        cur = ggml_mul_mat(ctx0, model->ctc_out_linear_weight, ggml_transpose(ctx0, encoder_out));
+        cur = ggml_mul_mat(ctx0, model->ctc_out_linear_weight, encoder_out);
         cur = ggml_add(ctx0, cur, model->ctc_out_linear_bias);
     }
-    ggml_set_name(cur, "logit");
-    ggml_set_output(cur);
+    ggml_tensor * probs = ggml_soft_max(ctx0, cur);
+    ggml_set_name(probs, "logit");
+    ggml_set_output(probs);
 
     return gf;
 }

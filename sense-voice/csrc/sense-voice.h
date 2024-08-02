@@ -18,7 +18,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_sta
 struct sense_voice_context *sense_voice_init_with_params_no_state(const char *path_model, sense_voice_context_params params);
 int sense_voice_full_parallel(struct sense_voice_context * ctx,
                               sense_voice_full_params params,
-                              std::vector<float> samples,
+                              std::vector<double> samples,
                               int n_samples,
                               int n_processors);
 #endif//SENSEVOICE_CPP_SENSE_VOICE_H

@@ -6,12 +6,13 @@
 #include "sense-voice-decoder.h"
 #include "sense-voice-cmvn.h"
 #include "common.h"
-#include <ggml.h>
+
 #include <cassert>
 #ifdef GGML_USE_METAL
 #include "ggml-metal.h"
 #endif
 #include <thread>
+#include <functional>
 #ifdef GGML_USE_CUDA
 #include "ggml-cuda.h"
 #include "sense_voice-mel-cuda.hpp"
@@ -24,9 +25,13 @@
 #ifdef GGML_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
+#ifdef GGML_USE_BLAS
+#include "ggml-blas.h"
+#endif
+
 #define SENSE_VOICE_MAX_NODES 8192
 #define SENSE_VOICE_MAX_DECODERS 8
-#define SENSE_VOICE_CHUNK_SIZE 9600
+#define SENSE_VOICE_CHUNK_SIZE 10
 #define SENSE_VOICE_FEATURES_DIM 560
 int sense_voice_lang_id(const char * lang) {
     if (!g_lang.count(lang)) {
@@ -42,15 +47,39 @@ int sense_voice_lang_id(const char * lang) {
     return g_lang.at(lang).first;
 }
 
+static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_voice_context_params & params) {
+    ggml_backend_buffer_type_t result = nullptr;
+
+    params.use_gpu || (result = ggml_backend_cpu_buffer_type());
+
+#ifdef GGML_USE_CUDA
+    result || (result = ggml_backend_cuda_buffer_type(params.gpu_device));
+#endif
+
+#ifdef GGML_USE_METAL
+    result || (result = ggml_backend_metal_buffer_type());
+#endif
+
+#ifdef GGML_USE_SYCL
+    result || (result = ggml_backend_sycl_buffer_type(params.gpu_device));
+#endif
+
+#ifdef GGML_USE_VULKAN
+    result || (result = ggml_backend_vk_buffer_type(params.gpu_device));
+#endif
+
+    result || (result = ggml_backend_cpu_buffer_type());
+
+    return result;
+}
 
 // load the model from a gguf file
 // see the convert-pt-to-ggml.py script for details
 bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
-    struct ggml_context *ctx_data = NULL;
-    
+
     struct gguf_init_params gguf_params = {
-            /*.no_alloc = */ false,
-            /*.ctx      = */ &ctx_data,
+            /*.no_alloc = */ true,
+            /*.ctx      = */ &sctx.model.ctx,
     };
     struct gguf_context *gguf_ctx = gguf_init_from_file(path_model, gguf_params);
 
@@ -146,15 +175,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         SENSE_VOICE_LOG_INFO("%s: ftype  = %d\n", __func__,
                              sense_voice.hparams.ftype);
 
-
-        // initialize all memory buffers
-        // always have at least one decoder
-
-        sctx.model.buf = new std::vector<uint8_t>();
-//        sctx.model.buf->resize(scale * MEM_REQ_MODEL.at(sctx.wtype).at(model.type));
-
-        // we skip initialization of the state until it is needed
-        // because it might be that state will always be provided externally.
     }
 
     // load vocab
@@ -166,7 +186,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
         if (n_vocab != sense_voice.hparams.n_vocab) {
             SENSE_VOICE_LOG_ERROR(
-                    "%s: vocabulary loaded from model file error - vaocabulary size is "
+                    "%s: vocabulary loaded from model file error - vocabulary size is "
                     "%d, but got %d .\n",
                     __func__, sense_voice.hparams.n_vocab, n_vocab);
         }
@@ -189,21 +209,76 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
     const ggml_type vtype =
             sctx.wtype == GGML_TYPE_F32 ? GGML_TYPE_F32 : GGML_TYPE_F16;  // conv
 
+
     {
         const auto &hparams = sense_voice.hparams;
 
+        // initialize all memory buffers
+        // always have at least one decoder
+
+        sctx.model.buffer = ggml_backend_alloc_ctx_tensors_from_buft(sctx.model.ctx, sense_voice_default_buffer_type(sctx.params));
+
+        if (!sctx.model.buffer) {
+            SENSE_VOICE_LOG_ERROR("%s: failed to allocate memory for the model\n", __func__);
+            return false;
+        }
+        size_t size_main = ggml_backend_buffer_get_size(sctx.model.buffer);
+        SENSE_VOICE_LOG_INFO("%s: %8s total size = %8.2f MB\n", __func__, ggml_backend_buffer_name(sctx.model.buffer), size_main / 1e6);
 
 
         // load weights
         {
+            // host buffer for CUDA loading
+            std::vector<uint8_t> read_buf;
+
             const int n_tensors = gguf_get_n_tensors(gguf_ctx);
             SENSE_VOICE_LOG_INFO("%s: n_tensors: %d\n", __func__, n_tensors);
             sense_voice.n_loaded = 0;
 
+            // model tensor sizing
+            size_t buffer_size = 32*1024; // need some extra room??
+
+            for (int i = 0; i < n_tensors; ++i) {
+                const char * name = gguf_get_tensor_name(gguf_ctx, i);
+                const size_t offset = gguf_get_tensor_offset(gguf_ctx, i);
+                struct ggml_tensor * cur = ggml_get_tensor(sctx.model.ctx, name);
+                size_t tensor_size = ggml_nbytes(cur);
+                buffer_size += tensor_size;
+            }
+
+
+            // open model gguf file
+            auto fin = std::ifstream(path_model, std::ios::binary);
+            if (!fin) {
+                fprintf(stderr, "cannot open model file for loading tensors\n");
+                return false;
+            }
+
+
             for (int i = 0; i < n_tensors; ++i) {
                 const std::string name = gguf_get_tensor_name(gguf_ctx, i);
-                struct ggml_tensor *cur = ggml_get_tensor(ctx_data, name.c_str());
+                struct ggml_tensor *cur = ggml_get_tensor(sctx.model.ctx, name.c_str());
                 sense_voice.tensors[name] = cur;
+
+                // seek to the tensor data in the file
+                const size_t offset = gguf_get_data_offset(gguf_ctx) + gguf_get_tensor_offset(gguf_ctx, i);
+                fin.seekg(offset, std::ios::beg);
+                if (!fin) {
+                    fprintf(stderr, "%s: failed to seek for tensor %s\n", __func__, name.c_str());
+                    return false;
+                }
+
+                // read in data and copy to device if needed
+                int num_bytes = ggml_nbytes(cur);
+                if (ggml_backend_buffer_is_host(sctx.model.buffer)) {
+                    // for the CPU and Metal backend, we can read directly into the tensor
+                    fin.read(reinterpret_cast<char *>(cur->data), num_bytes);
+                } else {
+                    // read into a temporary buffer first, then copy to device memory
+                    read_buf.resize(num_bytes);
+                    fin.read(reinterpret_cast<char *>(read_buf.data()), num_bytes);
+                    ggml_backend_tensor_set(cur, read_buf.data(), 0, num_bytes);
+                }
 
                 auto n_dim = ggml_n_dims(cur);
                 std::stringstream shape;
@@ -217,6 +292,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
                     shape << cur->ne[0] << ',' << cur->ne[1] << ',' << cur->ne[2] << ','
                           << cur->ne[3];
 
+
                 SENSE_VOICE_LOG_DEBUG(
                         "%s: tensor[%d]: n_dims = %d, shape = (%s), name = %s, "
                         "data = %p\n",
@@ -224,6 +300,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
                         cur->data);
             }
         }
+
+
     }
 
     {
@@ -245,11 +323,11 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             set_sense_voice_encoder_layer_sanm(sense_voice.model->encoder->encoders_layer, sense_voice.tensors, hparams.n_encoder_layers - 1, "encoders");
             set_sense_voice_encoder_layer_sanm(sense_voice.model->encoder->tp_encoders_layer, sense_voice.tensors, hparams.n_tp_encoder_layers, "tp_encoders");
 
-            sense_voice.model->encoder->e_after_norm_w = sense_voice.tensors["encoder->after_norm.weight"];
-            sense_voice.model->encoder->e_after_norm_b = sense_voice.tensors["encoder->after_norm.bias"];
+            sense_voice.model->encoder->e_after_norm_w = sense_voice.tensors["encoder.after_norm.weight"];
+            sense_voice.model->encoder->e_after_norm_b = sense_voice.tensors["encoder.after_norm.bias"];
 
-            sense_voice.model->encoder->e_after_norm_w = sense_voice.tensors["encoder->tp_norm.weight"];
-            sense_voice.model->encoder->e_after_norm_b = sense_voice.tensors["encoder.tp_norm.bias"];
+            sense_voice.model->encoder->e_tp_norm_w = sense_voice.tensors["encoder.tp_norm.weight"];
+            sense_voice.model->encoder->e_tp_norm_b = sense_voice.tensors["encoder.tp_norm.bias"];
 
             sense_voice.model->ctc_out_linear_weight = sense_voice.tensors["ctc.ctc_lo.weight"];
             sense_voice.model->ctc_out_linear_bias = sense_voice.tensors["ctc.ctc_lo.bias"];
@@ -287,6 +365,57 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
     return ctx;
 }
 
+static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
+    ggml_backend_t result = NULL;
+
+#ifdef GGML_USE_CUDA
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
+        result = ggml_backend_cuda_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_METAL
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using Metal backend\n", __func__);
+        ggml_backend_metal_log_set_callback(g_state.log_callback, g_state.log_callback_user_data);
+        result = ggml_backend_metal_init();
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
+        } else if (!ggml_backend_metal_supports_family(result, 7)) {
+            SENSE_VOICE_LOG_ERROR("%s: Metal GPU does not support family 7 - falling back to CPU\n", __func__);
+            ggml_backend_free(result);
+            result = NULL;
+        }
+    }
+#endif
+
+#ifdef GGML_USE_SYCL
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
+        result = ggml_backend_sycl_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_VULKAN
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using Vulkan backend\n", __func__);
+        result = ggml_backend_vk_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_vk_init() failed\n", __func__);
+        }
+    }
+#endif
+
+    return result;
+}
+
 struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_state(const char * path_model, struct sense_voice_context_params params) {
     SENSE_VOICE_LOG_INFO("%s: loading model from '%s'\n", __func__, path_model);
     
@@ -300,57 +429,75 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_sta
     return ctx;
 }
 
-static ggml_backend_t sense_voice_backend_init(
+static std::vector<ggml_backend_t> sense_voice_backend_init(
         const sense_voice_context_params &params) {
-    ggml_backend_t backend_gpu = NULL;
+    std::vector<ggml_backend_t> result;
     
-    // initialize the backends
-#ifdef GGML_USE_CUDA
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
-        backend_gpu = ggml_backend_cuda_init(params.gpu_device);
-        if (!backend_gpu) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_METAL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using Metal backend\n", __func__);
-        ggml_backend_metal_log_set_callback(g_state.log_callback,
-                                            g_state.log_callback_user_data);
-        backend_gpu = ggml_backend_metal_init();
-        if (!backend_gpu) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
-        } else if (!ggml_backend_metal_supports_family(backend_gpu, 7)) {
-            SENSE_VOICE_LOG_ERROR(
-                    "%s: Metal GPU does not support family 7 - falling back to CPU\n",
-                    __func__);
-            ggml_backend_free(backend_gpu);
-            backend_gpu = NULL;
-        }
-    }
-#endif
-
-#ifdef GGML_USE_SYCL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
-        backend_gpu = ggml_backend_sycl_init(params.gpu_device);
-        if (!backend_gpu) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
-        }
-    }
-#endif
+    ggml_backend_t backend_gpu = sense_voice_backend_init_gpu(params);
 
     if (backend_gpu) {
-        return backend_gpu;
+        result.push_back(backend_gpu);
     }
-    return ggml_backend_cpu_init();
+
+//#ifdef GGML_USE_BLAS
+//    {
+//        SENSE_VOICE_LOG_INFO("%s: using BLAS backend\n", __func__);
+//        ggml_backend_t backend_blas = ggml_backend_blas_init();
+//        if (!backend_blas) {
+//            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_blas_init() failed\n", __func__);
+//        } else {
+//            result.push_back(backend_blas);
+//        }
+//    }
+//#endif
+
+    GGML_UNUSED(params);
+
+    result.push_back(ggml_backend_cpu_init());
+
+    return result;
 }
 
-void sense_voice_free_state(struct sense_voice_state *state) {
+
+
+// measure the memory usage of a graph and prepare the allocr's internal data
+// buffer
+static bool sense_voice_sched_graph_init(
+        struct sense_voice_sched &allocr, std::vector<ggml_backend_t> backends,
+        std::function<struct ggml_cgraph *()> &&get_graph) {
+    auto & sched = allocr.sched;
+    auto & meta  = allocr.meta;
+
+    sched = ggml_backend_sched_new(backends.data(), nullptr, backends.size(), SENSE_VOICE_MAX_NODES, false);
+
+    meta.resize(ggml_tensor_overhead() * SENSE_VOICE_MAX_NODES +
+                ggml_graph_overhead());
+
+    // since there are dependencies between the different graphs,
+    // we need to allocate them instead of only reserving to get the correct compute buffer size
+    if (!ggml_backend_sched_alloc_graph(sched, get_graph())) {
+        // failed to allocate the compute buffer
+        SENSE_VOICE_LOG_ERROR("%s: failed to allocate the compute buffer\n", __func__);
+        return false;
+    }
+    ggml_backend_sched_reset(sched);
+
+    return true;
+}
+
+void sense_voice_free_state(struct sense_voice_state * state) {
     if (state) {
+
+        {
+            ggml_free(state->feature.ctx);
+            ggml_backend_buffer_free(state->feature.buffer);
+
+            state->feature.n_len_org = 0;
+            state->feature.ctx = nullptr;
+            state->feature.tensor = nullptr;
+            state->feature.buffer = nullptr;
+        }
+
 #ifdef SENSE_VOICE_USE_COREML
         if (state->ctx_coreml != nullptr) {
             sense_voice_coreml_free(state->ctx_coreml);
@@ -358,51 +505,37 @@ void sense_voice_free_state(struct sense_voice_state *state) {
         }
 #endif
 
+#ifdef SENSE_VOICE_USE_OPENVINO
+        if (state->ctx_openvino != nullptr) {
+            sense_voice_openvino_free(state->ctx_openvino);
+            state->ctx_openvino = nullptr;
+        }
+#endif
 
-        ggml_gallocr_free(state->alloc_encode.alloc);
-        ggml_gallocr_free(state->alloc_decode.alloc);
+        ggml_backend_sched_free(state->sched_encode.sched);
+        ggml_backend_sched_free(state->sched_decode.sched);
 
-        ggml_backend_free(state->backend);
-
+        for (auto & backend : state->backends) {
+            ggml_backend_free(backend);
+        }
         delete state;
     }
 }
 
-// measure the memory usage of a graph and prepare the allocr's internal data
-// buffer
-static bool sense_voice_allocr_graph_init(
-        struct sense_voice_allocr &allocr, ggml_backend_t backend,
-        std::function<struct ggml_cgraph *()> &&get_graph) {
-    auto &alloc = allocr.alloc;
-    auto &meta = allocr.meta;
-
-    alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
-
-    meta.resize(ggml_tensor_overhead() * SENSE_VOICE_MAX_NODES +
-                ggml_graph_overhead());
-
-    // since there are dependencies between the different graphs,
-    // we need to allocate them instead of only reserving to get the correct
-    // compute buffer size
-    if (!ggml_gallocr_alloc_graph(alloc, get_graph())) {
-        // failed to allocate the compute buffer
-        SENSE_VOICE_LOG_ERROR("%s: failed to allocate the compute buffer\n",
-                             __func__);
-        return false;
+static size_t sense_voice_sched_size(struct sense_voice_sched & sched) {
+    size_t size = sched.meta.size();
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched.sched); ++i) {
+        ggml_backend_t backend = ggml_backend_sched_get_backend(sched.sched, i);
+        size += ggml_backend_sched_get_buffer_size(sched.sched, backend);
     }
-    return true;
-}
-
-static size_t sense_voice_allocr_size(struct sense_voice_allocr &allocr) {
-    return allocr.meta.size() + ggml_gallocr_get_buffer_size(allocr.alloc, 0);
+    return size;
 }
 
 struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     ctx->state = new sense_voice_state;
     auto state = ctx->state;
-    
-    state->backend = sense_voice_backend_init(ctx->params);
-    if (!state->backend) {
+    state->backends = sense_voice_backend_init(ctx->params);
+    if (state->backends.empty()) {
         SENSE_VOICE_LOG_ERROR("%s: sense_voice_backend_init() failed\n", __func__);
         sense_voice_free_state(state);
         return nullptr;
@@ -446,8 +579,8 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
 
     // encoder allocator
     {
-        bool ok = sense_voice_allocr_graph_init(
-                state->alloc_encode, state->backend,
+        bool ok = sense_voice_sched_graph_init(
+                state->sched_encode, state->backends,
                 [&]() { return sense_voice_build_graph_encoder(*ctx, *state); });
 
         if (!ok) {
@@ -456,15 +589,15 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
             return nullptr;
         }
 
-        SENSE_VOICE_LOG_INFO("%s: compute buffer (all)   = %7.2f MB\n", __func__,
-                            sense_voice_allocr_size(state->alloc_encode) / 1e6);
+        SENSE_VOICE_LOG_INFO("%s: compute buffer (encoder)   = %7.2f MB\n", __func__,
+                             sense_voice_sched_size(state->sched_encode) / 1e6);
     }
 
 
     // todo decoder allocator
     {
-        bool ok = sense_voice_allocr_graph_init(
-                state->alloc_decode, state->backend,
+        bool ok = sense_voice_sched_graph_init(
+                state->sched_decode, state->backends,
                 [&]() { return sense_voice_build_graph_ctc_decoder(*ctx, *state); });
 
         if (!ok) {
@@ -473,8 +606,8 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
             return nullptr;
         }
 
-        SENSE_VOICE_LOG_INFO("%s: compute buffer (all)   = %7.2f MB\n", __func__,
-                             sense_voice_allocr_size(state->alloc_encode) / 1e6);
+        SENSE_VOICE_LOG_INFO("%s: compute buffer (decoder)   = %7.2f MB\n", __func__,
+                             sense_voice_sched_size(state->sched_decode) / 1e6);
     }
 
     return state;
@@ -515,7 +648,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params(const 
 
 int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
                                           struct sense_voice_state * state,
-                                          std::vector<float> pcmf32,
+                                          std::vector<double> pcmf32,
                                           int n_samples,
                                           int n_threads) {
     const int64_t t_start_us = ggml_time_us();
@@ -535,11 +668,14 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
     {
         // init features
         state->feature.n_len_org = state->feature.data.size();
-        state->feature.n_len = state->feature.data.size() / state->feature.n_mel;
+        state->feature.n_len = state->feature.data.size() / (state->feature.n_mel * state->feature.lfr_m);
         state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
-        state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx, GGML_TYPE_F32, state->feature.n_len, state->feature.n_mel);
-        state->feature.buffer = ggml_backend_alloc_buffer(state->backend,
-                                                          ggml_nbytes(state->feature.tensor) + ggml_backend_get_alignment(state->backend));
+        state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx,
+                                                   GGML_TYPE_F32,
+                                                   state->feature.lfr_m * state->feature.n_mel,
+                                                   state->feature.n_len);
+        state->feature.buffer = ggml_backend_alloc_buffer(state->backends[0],
+                                                          ggml_nbytes(state->feature.tensor) + ggml_backend_get_alignment(state->backends[0]));
         auto alloc = ggml_tallocr_new(state->feature.buffer);
         ggml_tallocr_alloc(&alloc, state->feature.tensor);
 
@@ -549,7 +685,8 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
         assert(state->feature.n_mel == ctx->model.hparams.n_mels);
 
         ggml_backend_tensor_set(feature, state->feature.data.data(), 0,
-                                ggml_nelements(feature) * sizeof(float));
+                                ggml_nbytes(feature));
+//        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
     SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
                          state->t_feature_us / 1000.0);
@@ -561,7 +698,7 @@ int sense_voice_full_with_state(
         struct sense_voice_context * ctx,
         struct sense_voice_state * state,
         struct sense_voice_full_params params,
-        std::vector<float> pcmf32,
+        std::vector<double> pcmf32,
         int   n_samples) {
     // clear old results
     auto & result_all = state->result_all;
@@ -602,12 +739,12 @@ int sense_voice_full_with_state(
         SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
         return -6;
     }
-    
+    return 0;
 }
 
 int sense_voice_full_parallel(struct sense_voice_context * ctx,
                               sense_voice_full_params params,
-                              std::vector<float> pcmf32,
+                              std::vector<double> pcmf32,
                               int n_samples,
                               int n_processors){
     if (n_processors == 1) {

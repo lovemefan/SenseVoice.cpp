@@ -307,6 +307,12 @@ struct sense_voice_vocab {
     id token_sot = 1;
 };
 
+// ggml_backend_sched wrapper for sense_voice usage
+struct sense_voice_sched {
+    ggml_backend_sched_t sched = nullptr;
+    std::vector<uint8_t> meta;
+};
+
 struct sense_voice_state {
     int64_t t_sample_us = 0;
     int64_t t_encode_us = 0;
@@ -329,14 +335,10 @@ struct sense_voice_state {
     // reusable buffer for `struct ggml_graph_plan.work_data`
     std::vector<uint8_t> work_buffer;
 
-    ggml_backend_t backend = nullptr;
+    std::vector<ggml_backend_t> backends;
 
-    // ggml-alloc:
-    // - stores meta info about the intermediate tensors into the `meta` buffers
-    // - stores the actual tensor data into the `data` buffers
-    sense_voice_allocr alloc_encode;
-
-    sense_voice_allocr alloc_decode;
+    sense_voice_sched sched_encode;
+    sense_voice_sched sched_decode;
 
     // result of the encoder
     struct ggml_tensor *encoder_out = nullptr;
@@ -420,8 +422,8 @@ struct sense_voice_model {
     // context
     struct ggml_context *ctx;
 
-    // the model memory buffer is read-only and can be shared between processors
-    std::vector<uint8_t> *buf;
+    // the model backend data is read-only and can be shared between processors
+    ggml_backend_buffer_t buffer = nullptr;
 
     // tensors
     int n_loaded;

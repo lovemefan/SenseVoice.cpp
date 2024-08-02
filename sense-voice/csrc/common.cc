@@ -6,6 +6,7 @@
 //
 
 #include "common.h"
+#include <stdarg.h>
 #ifdef __GNUC__
 #ifdef __MINGW32__
 #define SENSEVOICE_ATTRIBUTE_FORMAT(...) \
