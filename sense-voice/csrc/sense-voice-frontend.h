@@ -28,7 +28,7 @@ struct sense_voice_feature {
   int lfr_m = 7;
   int32_t frame_size = 25;
   int32_t frame_step = 10;
-  std::vector<double> data;
+  std::vector<float> data;
   ggml_context * ctx = nullptr;
   ggml_tensor * tensor = nullptr;
   ggml_backend_buffer_t buffer = nullptr;
@@ -117,11 +117,11 @@ struct WaveHeader {
 
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<float> &data);
-bool fbank_lfr_cmvn_feature(const std::vector<float> &samples,
+bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
                             const int n_samples, const int frame_size,
-                            const int frame_step, const int n_mel,
+                            const int frame_step, const int n_feats,
                             const int n_threads, const bool debug,
-                            sense_voice_cmvn &cmvn, sense_voice_feature &mel);
+                            sense_voice_cmvn &cmvn, sense_voice_feature &feats);
 
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
-                   std::vector<float> &data);
+                   std::vector<double> &data);
