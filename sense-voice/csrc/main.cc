@@ -363,10 +363,10 @@ int main(int argc, char ** argv) {
                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                 return 10;
             }
-            fprintf(stderr, "%s: sense_voice_full_parallel after\n", __func__ );
+
         }
-        fprintf(stderr, "%s: sense_voice_full_parallel after 2\n", __func__ );
+
     }
-    fprintf(stderr, "tests .................");
+
     return 0;
 }
