@@ -739,6 +739,12 @@ int sense_voice_full_with_state(
         SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
         return -6;
     }
+
+    // encode audio features starting at offset seek
+    if (!sense_voice_decode_internal(*ctx, *state, params.n_threads)) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to decode\n", __func__);
+        return -6;
+    }
     return 0;
 }
 
