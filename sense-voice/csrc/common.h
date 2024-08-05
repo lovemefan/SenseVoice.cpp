@@ -344,7 +344,7 @@ struct sense_voice_state {
     struct ggml_tensor *encoder_out = nullptr;
 
     // decode output (2-dimensional array: [n_tokens][n_vocab])
-    std::vector<float> logits;
+    std::vector<int> ids;
 
     std::vector<sense_voice_segment> result_all;
     std::vector<int> prompt_past;
