@@ -14,18 +14,18 @@
 
 // In FFT, we frequently use sine and cosine operations with the same values.
 // We can use precalculated values to speed up the process.
-std::vector<int32_t> ip_(2 + std::sqrt(SIN_COS_N_COUNT / 2));
-std::vector<float> w_(SIN_COS_N_COUNT / 2);
+std::vector<int> ip_(2 + std::sqrt(SIN_COS_N_COUNT / 2));
+std::vector<double> w_(SIN_COS_N_COUNT / 2);
 
 // see fftsg.cc
 void rdft(int n, int isgn, double *a, int *ip, double *w);
 
 static void rfft(const std::vector<double> &in) {
-  int32_t n = in.size();
+  int n = in.size();
   rdft(n, 1, (double *)in.data(), ip_.data(), (double *)w_.data());
 }
 
-inline int32_t round_to_nearest_power_two(int32_t n) {
+inline int round_to_nearest_power_two(int n) {
   // copied from kaldi/src/base/kaldi-math.cc
   n--;
   n |= n >> 1;
@@ -52,102 +52,6 @@ static bool hamming_window(int length, bool periodic,
   return true;
 }
 
-void load_cmvn(const char *filename, sense_voice_cmvn &cmvn) {
-  std::ifstream cmvn_stream(filename);
-  if (!cmvn_stream.is_open()) {
-    std::cout << "Failed to open file: " << filename;
-    exit(-1);
-  }
-  std::string line;
-
-  while (getline(cmvn_stream, line)) {
-    std::istringstream iss(line);
-    std::vector<std::string> line_item{std::istream_iterator<std::string>{iss},
-                                       std::istream_iterator<std::string>{}};
-    if (line_item[0] == "<AddShift>") {
-      getline(cmvn_stream, line);
-      std::istringstream means_lines_stream(line);
-      std::vector<std::string> means_lines{
-          std::istream_iterator<std::string>{means_lines_stream},
-          std::istream_iterator<std::string>{}};
-      if (means_lines[0] == "<LearnRateCoef>") {
-        for (int j = 3; j < means_lines.size() - 1; j++) {
-          cmvn.cmvn_means.push_back(stof(means_lines[j]));
-        }
-        continue;
-      }
-    } else if (line_item[0] == "<Rescale>") {
-      getline(cmvn_stream, line);
-      std::istringstream vars_lines_stream(line);
-      std::vector<std::string> vars_lines{
-          std::istream_iterator<std::string>{vars_lines_stream},
-          std::istream_iterator<std::string>{}};
-      if (vars_lines[0] == "<LearnRateCoef>") {
-        for (int j = 3; j < vars_lines.size() - 1; j++) {
-          cmvn.cmvn_vars.push_back(stof(vars_lines[j]));
-        }
-        continue;
-      }
-    }
-  }
-}
-
-static void lrf_cmvn_worker_thread(
-    int ith, sense_voice_feature &mel, sense_voice_cmvn &cmvn,
-    std::vector<std::vector<float>> &out_feats) {
-  // tapply lrf, merge lfr_m frames as one,lfr_n frames per window
-  // ref:
-  // https://github.com/alibaba-damo-academy/FunASR/blob/main/runtime/onnxruntime/src/sense_voice.cpp#L409-L440
-  int T = mel.n_len;
-  int lfr_m = mel.lfr_m;  // 7
-  int lfr_n = mel.lfr_n;  // 6
-  int T_lrf = ceil(1.0 * T / mel.lfr_n);
-  int left_pad = (mel.lfr_m - 1) / 2;
-  int left_pad_offset = (lfr_m - left_pad) * mel.n_mel;
-  // Merge lfr_m frames as one,lfr_n frames per window
-  T = T + (lfr_m - 1) / 2;
-  std::vector<float> p;
-  for (int i = 0; i < T_lrf; i++) {
-    // the first frames need left padding
-    if (i == 0) {
-      // left padding
-      for (int j = 0; j < left_pad; j++) {
-        p.insert(p.end(), mel.data.begin(), mel.data.begin() + mel.n_mel);
-      }
-      p.insert(p.end(), mel.data.begin(), mel.data.begin() + left_pad_offset);
-      out_feats.emplace_back(p);
-      p.clear();
-    } else {
-      if (lfr_m <= T - i * lfr_n) {
-        p.insert(p.end(), mel.data.begin() + (i * lfr_n - left_pad) * mel.n_mel,
-                 mel.data.begin() + (i * lfr_n - left_pad + lfr_m) * mel.n_mel);
-        out_feats.emplace_back(p);
-        p.clear();
-      } else {
-        // Fill to lfr_m frames at last window if less than lfr_m frames  (copy
-        // last frame)
-        int num_padding = lfr_m - (T - i * lfr_n);
-        for (int j = 0; j < (mel.n_len - i * lfr_n); j++) {
-          p.insert(p.end(),
-                   mel.data.begin() + (i * lfr_n - left_pad) * mel.n_mel,
-                   mel.data.end());
-        }
-        for (int j = 0; j < num_padding; j++) {
-          p.insert(p.end(), mel.data.end() - mel.n_mel, mel.data.end());
-        }
-        out_feats.emplace_back(p);
-        p.clear();
-      }
-    }
-  }
-
-  // apply cvmn
-  for (auto &out_feat : out_feats) {
-    for (int j = 0; j < cmvn.cmvn_means.size(); j++) {
-      out_feat[j] = (out_feat[j] + cmvn.cmvn_means[j]) * cmvn.cmvn_vars[j];
-    }
-  }
-}
 
 static void fbank_feature_worker_thread(int ith,
                                         const std::vector<double> &hamming,
@@ -171,19 +75,19 @@ static void fbank_feature_worker_thread(int ith,
 
     // remove dc offset
     {
-      float sum = 0;
-      for (int32_t i = 0; i != frame_size; ++i) {
-        sum += window[i];
+      double sum = 0;
+      for (int32_t k = 0; k < frame_size; ++k) {
+        sum += window[k];
       }
-      float mean = sum / frame_size;
-      for (int32_t i = 0; i != frame_size; ++i) {
-        window[i] -= mean;
+      double mean = sum / frame_size;
+      for (int32_t k = 0; k < frame_size; ++k) {
+        window[k] -= mean;
       }
     }
     // pre-emphasis
     {
-      for (int32_t i = frame_size - 1; i > 0; --i) {
-        window[i] -= PREEMPH_COEFF * window[i - 1];
+      for (int32_t k = frame_size - 1; k > 0; --k) {
+        window[k] -= PREEMPH_COEFF * window[k - 1];
       }
       window[0] -= PREEMPH_COEFF * window[0];
     }
@@ -212,14 +116,14 @@ static void fbank_feature_worker_thread(int ith,
       auto num_fft_bins = padded_window_size / 2;
       int n_mel = mel.n_mel;
       for (int j = 0; j < n_mel; j++) {
-        float sum = 0.0;
+        double sum = 0.0;
         for (int k = 0; k < num_fft_bins; k++) {
           sum += window[k] * LogMelFilterMelArray[j * num_fft_bins + k];
         }
 
         sum = log(sum > 1.19e-7 ? sum : 1.19e-7);
 
-        mel.data[i * n_mel + j] = sum;
+        mel.data[i * n_mel + j] = static_cast<float>(sum);
       }
     }
   }
@@ -365,8 +269,11 @@ bool load_wav_file(const char *filename, int32_t *sampling_rate,
     for (int32_t i = 0; i != speech_len; ++i) {
       data[i] = (double)speech_buff[i] / scale;
     }
+    free(speech_buff);
     return true;
   } else {
+    free(speech_buff);
     return false;
   }
+
 }
