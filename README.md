@@ -6,8 +6,7 @@ sense-voice是阿里funasr开源的中文语音识别模型。 本项目基于gg
 
 1. 基于ggml，不依赖其他第三方库, 致力于端侧部署
 2. 特征提取参考[kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank)库，并使用多线程加速特征提取过程。
-3. 参看[whisper.cpp](https://github.com/ggerganov/ggml/blob/master/examples/whisper/whisper.cpp)项目，使用flash attention
-   解码
+3. 可以使用flash attention解码（flash attention代码现在还没调好）
 
 ### 未来计划
 
