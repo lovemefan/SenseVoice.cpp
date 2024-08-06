@@ -265,7 +265,7 @@ class SenseVoiceSmall(Model):
         data_dtype = data.dtype
 
         # if f32 desired, convert any float16 to float32
-        if self.ftype == 0 and data_dtype == np.float16:
+        if self.ftype == 0 and data_dtype == np.float16 and 'fsmn_block.weight' not in name:
             data = data.astype(np.float32)
 
         # TODO: Why cant we use these float16 as-is? There should be not reason to store float16 as float32
@@ -308,6 +308,8 @@ class SenseVoiceSmall(Model):
                 tensor_size += self.write_one_tensor(q_k_v[1], name.replace('linear_q_k_v', 'linear_k'))
                 tensor_size += self.write_one_tensor(q_k_v[2], name.replace('linear_q_k_v', 'linear_v'))
 
+            elif 'fsmn_block.weight' in name:
+                tensor_size += self.write_one_tensor(data_torch.to(torch.float16), name)
             else:
                 tensor_size += self.write_one_tensor(data_torch, name)
 
