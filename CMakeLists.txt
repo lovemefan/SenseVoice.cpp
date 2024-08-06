@@ -15,6 +15,7 @@ set(SOURCE_FILES
         sense-voice/csrc/sense-voice-frontend.h
         sense-voice/csrc/sense-voice-frontend.cc
         sense-voice/csrc/fftsg.cc
+        sense-voice/csrc/log-mel-filter-bank.h
         sense-voice/csrc/sense-voice-encoder.h
         sense-voice/csrc/sense-voice-encoder.cc
         sense-voice/csrc/sense-voice-decoder.h
@@ -34,10 +35,9 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif ()
 
+
 if(GGML_USE_BLAS)
-    add_definitions(-DGGML_USE_BLAS=1)
-else()
-    add_definitions(-DGGML_USE_BLAS=0)
+    add_definitions(-DGGML_USE_BLAS)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/include/ggml ${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/src)
