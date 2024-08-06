@@ -4,8 +4,8 @@
 
 #include "sense-voice-encoder.h"
 
-#include <math.h>
-
+#include <cmath>
+#include <ggml.h>
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #ifdef GGML_USE_METAL
@@ -25,11 +25,11 @@
 #include "ggml-vulkan.h"
 #endif
 
-#ifdef GGML_USE_BLAS
-#include <ggml-blas.h>
-#endif
+//#ifdef GGML_USE_BLAS
+//#include <ggml-blas.h>
+//#endif
 
-#include <assert.h>
+#include <cassert>
 #include <map>
 #include <string>
 #include <vector>
@@ -58,7 +58,7 @@ struct sense_voice_context_params sense_voice_context_default_params() {
 
 static ggml_backend_t sense_voice_backend_init(
         const sense_voice_context_params &params) {
-    ggml_backend_t backend_gpu = NULL;
+    ggml_backend_t backend_gpu = nullptr;
 
     // initialize the backends
 #ifdef GGML_USE_CUDA
@@ -84,7 +84,7 @@ static ggml_backend_t sense_voice_backend_init(
                     "%s: Metal GPU does not support family 7 - falling back to CPU\n",
                     __func__);
             ggml_backend_free(backend_gpu);
-            backend_gpu = NULL;
+            backend_gpu = nullptr;
         }
     }
 #endif
@@ -116,11 +116,11 @@ static bool ggml_graph_compute_helper(
         if (ggml_backend_is_cpu(backend)) {
             ggml_backend_cpu_set_n_threads(backend, n_threads);
         }
-#ifdef GGML_USE_BLAS
-        if (ggml_backend_is_blas(backend)) {
-            ggml_backend_blas_set_n_threads(backend, n_threads);
-        }
-#endif
+//#ifdef GGML_USE_BLAS
+//        if (ggml_backend_is_blas(backend)) {
+//            ggml_backend_blas_set_n_threads(backend, n_threads);
+//        }
+//#endif
 
 #ifdef GGML_USE_METAL
         if (ggml_backend_is_metal(backend)) {
@@ -134,7 +134,11 @@ static bool ggml_graph_compute_helper(
     return t;
 }
 
-struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml_context *ctx0, ggml_tensor *cur, sense_voice_layer_encoder &layer){
+struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparams,
+                                               ggml_context *ctx0,
+                                               ggml_tensor *cur,
+                                               sense_voice_layer_encoder &layer,
+                                               bool user_flash_attn){
 
     const int n_state = hparams.n_encoder_hidden_state;
     const int n_head = hparams.n_encoder_attention_heads;
@@ -164,7 +168,9 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
         //  ref:
         //  https://github.com/alibaba-damo-academy/FunASR/blob/main/funasr/modules/attention.py#L391-L396
         struct ggml_tensor *Q;
+        struct ggml_tensor *Q_h;
         struct ggml_tensor *K;
+        struct ggml_tensor *K_h;
         struct ggml_tensor *V;
         struct ggml_tensor *V_h;
 
@@ -174,26 +180,29 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
                      ggml_mul_mat(ctx0, layer.e_attn_ln_q_w, cur),
                      layer.e_attn_ln_q_b);
 
-        Q = ggml_reshape_4d(ctx0, Q, n_state / n_head, n_ctx, n_head, 1);
-        Q = ggml_cont(ctx0, Q);
+        Q_h = ggml_reshape_3d(ctx0, Q, n_state / n_head, n_head, n_ctx);
+        Q_h = ggml_permute(ctx0, Q_h,  0, 2, 1, 3);
+        Q_h = ggml_cont(ctx0, Q_h);
 
-        ggml_set_name(Q, "attention_Q");
+        ggml_set_name(Q_h, "attention_Q");
 
         K = ggml_add(ctx0,
                      ggml_mul_mat(ctx0, layer.e_attn_ln_k_w, cur),
                      layer.e_attn_ln_k_b);
 
-        K = ggml_reshape_4d(ctx0, K, n_state / n_head, n_ctx, n_head, 1);
-        K = ggml_cont(ctx0, K);
+        K_h = ggml_reshape_3d(ctx0, K, n_state / n_head, n_head, n_ctx);
+        K_h = ggml_permute(ctx0, K_h, 0, 2, 1, 3);
+        K_h = ggml_cont(ctx0, K_h);
         //      K = ggml_reshape_3d(ctx0, K, n_state, n_ctx, n_head);
-        ggml_set_name(K, "attention_K");
+        ggml_set_name(K_h, "attention_K");
 
         V = ggml_add(ctx0,
                      ggml_mul_mat(ctx0, layer.e_attn_ln_v_w, cur),
                      layer.e_attn_ln_v_b);
         ggml_set_name(V, "attention_V");
 
-        V_h = ggml_reshape_4d(ctx0, V, n_state / n_head, n_ctx, n_head, 1);
+        V_h = ggml_reshape_3d(ctx0, V, n_state / n_head, n_head, n_ctx);
+        V_h = ggml_permute(ctx0, V_h, 0, 2, 1, 3);
         V_h = ggml_cont(ctx0, V_h);
 
         // fsmn forward with V
@@ -228,35 +237,38 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
                 fsmn_memory = ggml_reshape_4d(ctx0, result, im2col->ne[1], im2col->ne[2], b->ne[2], b->ne[3]);
             }
             fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));
-            ggml_set_name(fsmn_memory, "fsmn_memory");
             fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
+            ggml_set_name(fsmn_memory, "fsmn_memory");
+        }
+
+        struct ggml_tensor *KQV;
+        float KQscale = 1.0f / sqrtf(float(n_state) / n_head);
+
+        if(user_flash_attn){
+            // todo flash attention is not available now
+            KQV = ggml_flash_attn_ext(ctx0, Q, K, V, nullptr, KQscale, 0.0f);
+        } else{
+            // K * Q
+            struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K_h, Q_h);
+
+            struct ggml_tensor *KQ_scaled = ggml_scale(ctx0, KQ, KQscale);
+            ggml_set_name(KQ_scaled, "score");
+
+            struct ggml_tensor *KQ_soft_max = ggml_soft_max(ctx0, KQ_scaled);
+            ggml_set_name(KQ_soft_max, "attention");
+
+            KQV = ggml_mul_mat(
+                    ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
         }
 
 
-#ifdef USE_FLASH_ATTN
-
-        struct ggml_tensor *KQV = ggml_flash_attn(ctx0, Q, K, V, false);
-#else
-
-        // K * Q
-        struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K, Q);
-
-        float KQscale = 1.0f / sqrtf(float(n_state) / n_head);
-
-        struct ggml_tensor *KQ_scaled = ggml_scale(ctx0, KQ, KQscale);
-
-        struct ggml_tensor *KQ_soft_max = ggml_soft_max(ctx0, KQ_scaled);
-
-        struct ggml_tensor *KQV = ggml_mul_mat(
-                ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
-#endif
         struct ggml_tensor *KQV_merged = ggml_permute(ctx0, KQV, 0, 2, 1, 3);
         cur = ggml_cpy(ctx0, KQV_merged,
                        ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
 
         cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_out_w, cur),
                        layer.e_attn_ln_out_b);
-
+        ggml_set_name(cur, "attention_out");
 
         cur = ggml_add(ctx0, cur, fsmn_memory);
 
@@ -272,8 +284,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(sense_voice_hparams hparams, ggml
         // layer norm after attention
         // cur = ln_0_w*cur + ln_0_b
         cur = ggml_norm(ctx0, cur, hparams.eps);
-        cur =
-                ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w2), layer.e_norm_b2);
+        cur = ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w2), layer.e_norm_b2);
     }
 
     {
@@ -336,11 +347,11 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     cur = ggml_add(ctx0, position, cur);
 
     // encoders0 forward
-    cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoder0);
+    cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoder0, pctx.params.flash_attn);
 
     // encoders forward
     for (int i=0; i < hparams.n_encoder_layers - 1; i++){
-        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoders_layer[i]);
+        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoders_layer[i], pctx.params.flash_attn);
     }
 
     {
@@ -353,7 +364,7 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     }
     // tp encoders forward
     for (int i=0; i < hparams.n_tp_encoder_layers; i++){
-        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->tp_encoders_layer[i]);
+        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->tp_encoders_layer[i], pctx.params.flash_attn);
     }
 
     {
@@ -440,7 +451,9 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
 
 
         }
-        ggml_graph_dump_dot(gf, NULL, "sense-voice.dot");
+//        ggml_graph_dump_dot(gf, NULL, "sense-voice.dot");
+//        ggml_backend_sched_set_eval_callback(sched, ctx.params.cb_eval, ctx.params.cb_eval_user_data);
+
         if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
             return false;
         }
@@ -454,7 +467,7 @@ bool set_sense_voice_encoder_layer_sanm(std::vector<sense_voice_layer_encoder> &
                                         std::map<std::string,
                                         struct ggml_tensor *> &tensors,
                                         int n_encoder_layers,
-                                        std::string prefix){
+                                        const std::string &prefix){
     for (int i = 0; i < n_encoder_layers; ++i) {
         auto layer = &encoder[i];
         // map by name

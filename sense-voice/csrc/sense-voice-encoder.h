@@ -89,7 +89,7 @@ SENSEVOICE_API void sense_voice_free_params(
 
 bool set_sense_voice_encoder_layer_sanm(
         std::vector<sense_voice_layer_encoder> &layer, std::map<std::string,
-        struct ggml_tensor *> &tensors, int n_encoder_layers, std::string prefix);
+        struct ggml_tensor *> &tensors, int n_encoder_layers, const std::string &prefix);
 
 bool sense_voice_encode_internal(sense_voice_context &ctx,
                             sense_voice_state &state,

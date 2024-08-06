@@ -37,6 +37,7 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
     ggml_set_output(probs);
     ggml_set_output(argmax_logit);
     ggml_build_forward_expand(gf, argmax_logit);
+    ggml_free(ctx0);
     return gf;
 }
 
@@ -81,7 +82,11 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
     {
         auto & sched = state.sched_decode.sched;
 
+
         ggml_cgraph *gf = sense_voice_build_graph_ctc_decoder(ctx, state);
+
+//        sched->callback_eval = ctx.params.cb_eval;
+//        sched->callback_eval_data = ctx.params.cb_eval_user_data;
 
         if (!ggml_backend_sched_alloc_graph(sched, gf)) {
             // should never happen as we pre-allocate the memory
@@ -97,18 +102,17 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
                     ggml_nelements(encoder_out) * sizeof(float));
         }
 
-
         if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
             return false;
         }
-
         {
             ggml_tensor *argmax_logit = gf->nodes[gf->n_nodes - 1];
+
             state.ids = std::vector<int>((int *)argmax_logit->data, (int *)argmax_logit->data + argmax_logit->ne[0]);
 
             for(int id: state.ids){
                 if (id != 0) {
-                    printf("%s", ctx.vocab.id_to_token[id].c_str());
+                    SENSE_VOICE_LOG_INFO("%s", ctx.vocab.id_to_token[id].c_str());
                 }
             }
         }

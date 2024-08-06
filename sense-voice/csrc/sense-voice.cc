@@ -31,8 +31,9 @@
 
 #define SENSE_VOICE_MAX_NODES 8192
 #define SENSE_VOICE_MAX_DECODERS 8
-#define SENSE_VOICE_CHUNK_SIZE 10
+#define SENSE_VOICE_CHUNK_SIZE 100
 #define SENSE_VOICE_FEATURES_DIM 560
+
 int sense_voice_lang_id(const char * lang) {
     if (!g_lang.count(lang)) {
         for (const auto & kv : g_lang) {
@@ -223,7 +224,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             return false;
         }
         size_t size_main = ggml_backend_buffer_get_size(sctx.model.buffer);
-        SENSE_VOICE_LOG_INFO("%s: %8s total size = %8.2f MB\n", __func__, ggml_backend_buffer_name(sctx.model.buffer), size_main / 1e6);
+        SENSE_VOICE_LOG_INFO("%s: %s total size = %8.2f MB\n", __func__, ggml_backend_buffer_name(sctx.model.buffer), size_main / 1e6);
 
 
         // load weights
@@ -300,7 +301,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
                         cur->data);
             }
         }
-
+        gguf_free(gguf_ctx);
 
     }
 
@@ -366,7 +367,7 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
 }
 
 static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
-    ggml_backend_t result = NULL;
+    ggml_backend_t result = nullptr;
 
 #ifdef GGML_USE_CUDA
     if (params.use_gpu) {
@@ -388,7 +389,7 @@ static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_par
         } else if (!ggml_backend_metal_supports_family(result, 7)) {
             SENSE_VOICE_LOG_ERROR("%s: Metal GPU does not support family 7 - falling back to CPU\n", __func__);
             ggml_backend_free(result);
-            result = NULL;
+            result = nullptr;
         }
     }
 #endif
@@ -489,13 +490,17 @@ void sense_voice_free_state(struct sense_voice_state * state) {
     if (state) {
 
         {
-            ggml_free(state->feature.ctx);
-            ggml_backend_buffer_free(state->feature.buffer);
 
-            state->feature.n_len_org = 0;
-            state->feature.ctx = nullptr;
-            state->feature.tensor = nullptr;
-            state->feature.buffer = nullptr;
+            {
+                ggml_free(state->feature.ctx);
+                ggml_backend_buffer_free(state->feature.buffer);
+                state->feature.n_len_org = 0;
+                state->feature.ctx = nullptr;
+                state->feature.tensor = nullptr;
+                state->feature.buffer = nullptr;
+            }
+
+            state->encoder_out = nullptr;
         }
 
 #ifdef SENSE_VOICE_USE_COREML
@@ -594,7 +599,6 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     }
 
 
-    // todo decoder allocator
     {
         bool ok = sense_voice_sched_graph_init(
                 state->sched_decode, state->backends,
@@ -648,7 +652,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params(const 
 
 int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
                                           struct sense_voice_state * state,
-                                          std::vector<double> pcmf32,
+                                          std::vector<double> &pcmf32,
                                           int n_samples,
                                           int n_threads) {
     const int64_t t_start_us = ggml_time_us();
@@ -686,6 +690,7 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
 
         ggml_backend_tensor_set(feature, state->feature.data.data(), 0,
                                 ggml_nbytes(feature));
+
 //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
     SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
@@ -739,18 +744,25 @@ int sense_voice_full_with_state(
         SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
         return -6;
     }
-
-    // encode audio features starting at offset seek
+//
+//
+//    // encode audio features starting at offset seek
     if (!sense_voice_decode_internal(*ctx, *state, params.n_threads)) {
         SENSE_VOICE_LOG_ERROR("%s: failed to decode\n", __func__);
         return -6;
     }
+
+    SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                         __func__,
+                         (state->t_encode_us + state->t_decode_us) / 1e6,
+                         (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
+
     return 0;
 }
 
 int sense_voice_full_parallel(struct sense_voice_context * ctx,
-                              sense_voice_full_params params,
-                              std::vector<double> pcmf32,
+                              sense_voice_full_params &params,
+                              std::vector<double> &pcmf32,
                               int n_samples,
                               int n_processors){
     if (n_processors == 1) {
@@ -847,3 +859,4 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
 
     return ret;
 }
+
