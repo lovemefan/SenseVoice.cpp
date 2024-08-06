@@ -206,7 +206,6 @@ struct sense_voice {
 
 };
 
-
 static const std::map<std::string, std::pair<int, std::string>> g_lang = {
         { "auto",  { 0,  "auto",         } },
         { "zh",  { 3,  "chinese",         } },
@@ -319,7 +318,6 @@ struct sense_voice_state {
     int64_t t_decode_us = 0;
     int64_t t_prompt_us = 0;
     int64_t t_feature_us = 0;
-
     int32_t n_sample = 0;  // number of tokens sampled
     int32_t n_encode = 0;  // number of encoder calls
     int32_t n_decode =
@@ -328,6 +326,8 @@ struct sense_voice_state {
             0;  // number of decoder calls with n_tokens >  1 (prompt encoding)
     int32_t n_fail_p = 0;  // number of logprob threshold failures
     int32_t n_fail_h = 0;  // number of entropy threshold failures
+
+    float duration = 0;
 
     // shared between all decoders
     sense_voice_feature feature;
@@ -434,6 +434,8 @@ struct sense_voice_context_params {
     bool use_gpu;
     bool  flash_attn;
     int gpu_device;  // CUDA device
+    ggml_backend_sched_eval_callback cb_eval;
+    void * cb_eval_user_data;
 };
 
 struct sense_voice_context {
