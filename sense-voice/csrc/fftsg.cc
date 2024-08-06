@@ -291,7 +291,7 @@ cdft(2*n, -1, a, ip, w);
            w[] and ip[] are compatible with all routines.
                */
 
-#include <math.h>
+#include <cmath>
 
 #ifdef USE_CDFT_PTHREADS
 #define USE_CDFT_THREADS
