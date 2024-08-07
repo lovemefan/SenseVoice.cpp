@@ -1,6 +1,10 @@
 # SenseVoice.cpp
 
-sense-voice是阿里funasr开源的中文语音识别模型。 本项目基于ggml推理框架
+[SenseVoice](https://github.com/FunAudioLLM/SenseVoice)是具有音频理解能力的音频基础模型， 
+包括语音识别（ASR）、语种识别（LID）、语音情感识别（SER）和声学事件分类（AEC）或声学事件检测（AED）。
+当前SenseVoice-small支持中、粤、英、日、韩语的多语言语音识别，情感识别和事件检测能力，具有极低的推理延迟。
+
+本项目基于ggml推理框架
 
 ## 1. 特性
 
