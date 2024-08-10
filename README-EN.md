@@ -1,24 +1,28 @@
 # SenseVoice.cpp
 
-「简体中文」|「[English](./README-EN.md)」
+[「简体中文」](./README.md)|「English」
 
-[SenseVoice](https://github.com/FunAudioLLM/SenseVoice)是具有音频理解能力的音频基础模型， 
-包括语音识别（ASR）、语种识别（LID）、语音情感识别（SER）和声学事件分类（AEC）或声学事件检测（AED）。
-当前SenseVoice-small支持中、粤、英、日、韩语的多语言语音识别，情感识别和事件检测能力，具有极低的推理延迟。
 
-本项目基于[ggml](https://github.com/ggerganov/ggml)推理框架。
+[SenseVoice](https://github.com/FunAudioLLM/SenseVoice)SenseVoice is an audio foundation model with audio understanding capabilities, 
+including Automatic Speech Recognition (ASR), Language Identification (LID), Speech Emotion Recognition (SER), 
+and Acoustic Event Classification (AEC) or Acoustic Event Detection (AED). 
+Currently, SenseVoice-small supports multilingual speech recognition, emotion recognition, and event detection capabilities in 
+Mandarin, Cantonese, English, Japanese, and Korean, with extremely low inference latency.
 
-## 1. 特性
+This project is based on the [ggml](https://github.com/ggerganov/ggml) framework.
 
-1. 基于ggml，不依赖其他第三方库, 致力于端侧部署
-2. 特征提取参考[kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank)库，支持多线程特征提取。
-3. 可以使用flash attention解码（flash attention代码现在还没调好）
+## 1.  Features
 
-### 1.1 未来计划
+1.	Based on ggml, it does not rely on other third-party libraries and is committed to edge deployment.
+2.	Feature extraction references the [kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank) library, supporting multi-threaded feature extraction.
+3.	Flash attention decoding can be used (flash attention code is not fully tuned yet).
 
-1. 支持更多backend , 理论上来说，ggml支持以下后端，后续将会慢慢适配，欢迎贡献。
+### 1.1 Future Plans
 
-| 后端                                   | 平台                   | 是否支持 |
+
+1.	Support more backends. In theory, ggml supports the following backends, and future adaptations will be gradually made. Contributions are welcome.
+
+| Backend                                   | Device               | Supported |
 |--------------------------------------|----------------------|------|
 | CPU                                  | All                  | ✅    |
 | [Metal](./docs/build.md#metal-build) | Apple Silicon        |      |   
@@ -32,14 +36,14 @@
 | [Cann](./docs/build.md#vulkan)       | Ascend NPU           |      |
 
 
-2. 支持更多量化模型
-3. 提升性能
-4. 修bug
+2.	Support more quantized models.
+3.	Improve performance.
+4.	Fix bugs.
 
-## 2. 使用
+## 2. Usage
 
 ### 直接下载模型或转换模型
-可以直接从下面链接下载模型
+You can download the model directly from the links below:
 
 [huggingface](https://huggingface.co/lovemefan/sense-voice-gguf)
 [modelscope](https://www.modelscope.cn/models/lovemefan/SenseVoiceGGUF)
@@ -51,12 +55,12 @@ git clone https://huggingface.co/lovemefan/sense-voice-gguf.git
 git clone https://www.modelscope.cn/models/lovemefan/SenseVoiceGGUF.git
 ```
 
-或许自行下载官方模型转换
+Alternatively, download the official model and convert it yourself:
 ```bash
-# 下载官方模型
+# Download the official model
 git lfs install
 git clone https://www.modelscope.cn/iic/SenseVoiceSmall.git
-# 转换模型
+# Convert the model
 python scripts/convert-pt-to-gguf.py \
 --model SenseVoiceSmall \
 --output /path/to/export/gguf-fp32-sense-voice-small.bin \
@@ -73,13 +77,13 @@ git submodule sync && git submodule update --init --recursive
 mkdir build && cd build
 cmake .. && make -j 8
 
-# -t means thread num， -t 指定线程数
+# -t means thread num
 ./bin/sense-voice-main -m /path/gguf-fp16-sense-voice-small.bin /path/asr_example_zh.wav  -t 4
 ```
 
-### 输出
+### Output
 
-当前使用sense-voice-f16模型输出
+Currently using the sense-voice-f16 model for output:
 
 ```
 $./bin/sense-voice-main -m /data/code/SenseVoice.cpp/scripts/resources/gguf-fp16-sense-voice.bin /data/code/SenseVoice.cpp/scripts/resources/SenseVoiceSmall/example/asr_example_zh.wav  -t 4
@@ -111,12 +115,10 @@ sense_voice_pcm_to_feature_with_state: calculate fbank and cmvn takes 7.207 ms
 <|zh|><|NEUTRAL|><|Speech|><|withitn|>欢迎大家来体验达摩院推出的语音识别模型。
 sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
 ```
-## 感谢以下项目
+## Acknowledgements
 
-1. 本项目借用并模仿来自[whisper.cpp](https://github.com/ggerganov/ggml/blob/master/examples/whisper/whisper.cpp)
-   的大部分c++代码
-2. 参考来自funasr的paraformer模型结构以及前向计算 [FunASR](https://github.com/alibaba-damo-academy/FunASR)
-3. 本项目参考并借用 [kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank)中的fbank特征提取算法。
-   [FunASR](https://github.com/alibaba-damo-academy/FunASR/blob/main/runtime/onnxruntime/src/paraformer.cpp#L337C22-L372)
-   中的lrf + cmvn 算法
-4. 借用了大量的前期工作[paraformer.cpp](https://github.com/lovemefan/paraformer.cpp), paraformer.cpp项目后续将继续更新
+1.	This project borrows and mimics most of the C++ code from [whisper.cpp](https://github.com/ggerganov/ggml/blob/master/examples/whisper/whisper.cpp).
+2.	References the paraformer model structure and forward computation from [FunASR](https://github.com/alibaba-damo-academy/FunASR).
+3.	Feature extraction algorithm borrowed from  [kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank) and the lrf + cmvn algorithm in [FunASR](https://github.com/alibaba-damo-academy/FunASR/blob/main/runtime/onnxruntime/src/paraformer.cpp#L337C22-L372).
+4.	Utilizes a lot of preliminary work from [paraformer.cpp](https://github.com/lovemefan/paraformer.cpp), which will continue to be updated.
+
