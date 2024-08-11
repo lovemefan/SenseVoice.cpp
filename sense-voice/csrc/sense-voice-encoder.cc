@@ -135,9 +135,11 @@ static bool ggml_graph_compute_helper(
 }
 
 struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparams,
+                                               sense_voice_state *state,
                                                ggml_context *ctx0,
                                                ggml_tensor *cur,
                                                sense_voice_layer_encoder &layer,
+                                               ggml_cgraph *gf,
                                                bool user_flash_attn){
 
     const int n_state = hparams.n_encoder_hidden_state;
@@ -245,8 +247,27 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
         float KQscale = 1.0f / sqrtf(float(n_state) / n_head);
 
         if(user_flash_attn){
+            const int n_ctx_pad = GGML_PAD(n_ctx, 256);
+            const int n_state_head = n_state / n_head;
             // todo flash attention is not available now
-            KQV = ggml_flash_attn_ext(ctx0, Q, K, V, nullptr, KQscale, 0.0f);
+            ggml_build_forward_expand(gf, ggml_cpy(ctx0, K, ggml_view_1d(ctx0, state->kv_pad.k, n_ctx*n_state, 0)));
+            ggml_build_forward_expand(gf, ggml_cpy(ctx0, V, ggml_view_1d(ctx0, state->kv_pad.v, n_ctx*n_state, 0)));
+
+            struct ggml_tensor * K =
+                    ggml_view_3d(ctx0, state->kv_pad.k,
+                                 n_state_head, n_ctx_pad, n_head,
+                                 ggml_element_size(state->kv_pad.k)*n_state,
+                                 ggml_element_size(state->kv_pad.k)*n_state_head,
+                                 0);
+
+            struct ggml_tensor * V =
+                    ggml_view_3d(ctx0, state->kv_pad.v,
+                                 n_state_head, n_ctx_pad, n_head,
+                                 ggml_element_size(state->kv_pad.v)*n_state,
+                                 ggml_element_size(state->kv_pad.v)*n_state_head,
+                                 0);
+            KQV = ggml_flash_attn_ext(ctx0, Q_h, K, V, nullptr, KQscale, 0.0f);
+            cur = ggml_reshape_2d(ctx0, KQV, n_state, n_ctx);
         } else{
             // K * Q
             struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K_h, Q_h);
@@ -259,11 +280,15 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
 
             KQV = ggml_mul_mat(
                     ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
+            struct ggml_tensor *KQV_merged = ggml_permute(ctx0, KQV, 0, 2, 1, 3);
+            cur = ggml_cpy(ctx0,
+                           KQV_merged,
+                           ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
         }
 
 
-        struct ggml_tensor *KQV_merged = ggml_permute(ctx0, KQV, 0, 2, 1, 3);
-        cur = ggml_cpy(ctx0, KQV_merged,
+
+        cur = ggml_cpy(ctx0, cur,
                        ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_state, n_ctx));
 
         cur = ggml_add(ctx0, ggml_mul_mat(ctx0, layer.e_attn_ln_out_w, cur),
@@ -347,11 +372,11 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     cur = ggml_add(ctx0, position, cur);
 
     // encoders0 forward
-    cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoder0, pctx.params.flash_attn);
+    cur = encoder_layer_sanm_forward(hparams, pctx.state, ctx0, cur, model->encoder->encoder0, gf, pctx.params.flash_attn);
 
     // encoders forward
     for (int i=0; i < hparams.n_encoder_layers - 1; i++){
-        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->encoders_layer[i], pctx.params.flash_attn);
+        cur = encoder_layer_sanm_forward(hparams, pctx.state, ctx0, cur, model->encoder->encoders_layer[i], gf, pctx.params.flash_attn);
     }
 
     {
@@ -364,7 +389,7 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     }
     // tp encoders forward
     for (int i=0; i < hparams.n_tp_encoder_layers; i++){
-        cur = encoder_layer_sanm_forward(hparams, ctx0, cur, model->encoder->tp_encoders_layer[i], pctx.params.flash_attn);
+        cur = encoder_layer_sanm_forward(hparams,  pctx.state, ctx0, cur, model->encoder->tp_encoders_layer[i], gf, pctx.params.flash_attn);
     }
 
     {

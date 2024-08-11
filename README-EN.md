@@ -15,7 +15,7 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 
 1.	Based on ggml, it does not rely on other third-party libraries and is committed to edge deployment.
 2.	Feature extraction references the [kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank) library, supporting multi-threaded feature extraction.
-3.	Flash attention decoding can be used (flash attention code is not fully tuned yet).
+3.	Flash attention decoding can be used (The speed has not improved 🤔 weird，need help).
 
 ### 1.1 Future Plans
 
@@ -42,7 +42,7 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 
 ## 2. Usage
 
-### 直接下载模型或转换模型
+### Download Model or Convert Model
 You can download the model directly from the links below:
 
 [huggingface](https://huggingface.co/lovemefan/sense-voice-gguf)

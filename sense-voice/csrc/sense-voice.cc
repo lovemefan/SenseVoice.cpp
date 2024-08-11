@@ -353,6 +353,9 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
         const char *path_model, sense_voice_context_params params) {
     ggml_time_init();
 
+    SENSE_VOICE_LOG_INFO("%s: use gpu    = %d\n", __func__, params.use_gpu);
+    SENSE_VOICE_LOG_INFO("%s: flash attn = %d\n", __func__, params.flash_attn);
+    SENSE_VOICE_LOG_INFO("%s: gpu_device = %d\n", __func__, params.gpu_device);
     auto *ctx = new struct sense_voice_context;
 
     ctx->params = params;
@@ -459,7 +462,54 @@ static std::vector<ggml_backend_t> sense_voice_backend_init(
     return result;
 }
 
+static bool sense_voice_kv_cache_init(
+        struct sense_voice_kv_cache & cache,
+        ggml_backend_t   backend,
+        ggml_type   wtype,
+        int64_t   n_text_state,
+        int64_t   n_text_layer,
+        int   n_ctx) {
+    const int64_t n_mem      = n_text_layer*n_ctx;
+    const int64_t n_elements = n_text_state*n_mem;
 
+    struct ggml_init_params params = {
+            /*.mem_size   =*/ 2*ggml_tensor_overhead(),
+            /*.mem_buffer =*/ nullptr,
+            /*.no_alloc   =*/ true,
+    };
+
+    cache.head = 0;
+    cache.size = n_ctx;
+
+    cache.cells.clear();
+    cache.cells.resize(n_ctx);
+
+    cache.ctx = ggml_init(params);
+
+    if (!cache.ctx) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to allocate memory for the kv cache context\n", __func__);
+        return false;
+    }
+
+    cache.k = ggml_new_tensor_1d(cache.ctx, wtype, n_elements);
+    cache.v = ggml_new_tensor_1d(cache.ctx, wtype, n_elements);
+
+    cache.buffer = ggml_backend_alloc_ctx_tensors(cache.ctx, backend);
+    if (!cache.buffer) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to allocate memory for the kv cache\n", __func__);
+        return false;
+    }
+
+    ggml_backend_buffer_clear(cache.buffer, 0);
+
+    return true;
+}
+
+static void sense_voice_kv_cache_free(struct sense_voice_kv_cache & cache) {
+    ggml_free(cache.ctx);
+    ggml_backend_buffer_free(cache.buffer);
+    cache.ctx = nullptr;
+}
 
 // measure the memory usage of a graph and prepare the allocr's internal data
 // buffer
@@ -488,7 +538,7 @@ static bool sense_voice_sched_graph_init(
 
 void sense_voice_free_state(struct sense_voice_state * state) {
     if (state) {
-
+        sense_voice_kv_cache_free(state->kv_pad);
         {
 
             {
@@ -544,6 +594,20 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
         SENSE_VOICE_LOG_ERROR("%s: sense_voice_backend_init() failed\n", __func__);
         sense_voice_free_state(state);
         return nullptr;
+    }
+
+    if (!sense_voice_kv_cache_init(state->kv_pad, state->backends[0], ctx->itype,
+                               ctx->model.hparams.n_encoder_hidden_state,
+                               1,
+                               GGML_PAD(ctx->model.hparams.n_audio_ctx, 256))) {
+        SENSE_VOICE_LOG_ERROR("%s: sense_voice_kv_cache_init() failed for self-attention cache\n", __func__);
+        sense_voice_free_state(state);
+        return nullptr;
+    }
+
+    {
+        const size_t memory_size = ggml_nbytes(state->kv_pad.k) + ggml_nbytes(state->kv_pad.v);
+        SENSE_VOICE_LOG_INFO("%s: kv pad  size  = %7.2f MB\n", __func__, memory_size / 1e6);
     }
 
     // set input

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <map>
+#include <set>
 #include <ggml.h>
 #include <ggml-alloc.h>
 
@@ -312,6 +313,33 @@ struct sense_voice_sched {
     std::vector<uint8_t> meta;
 };
 
+struct sense_voice_kv_cell {
+    int32_t pos = -1;
+
+    std::set<int32_t> seq_id;
+
+    bool has_seq_id(const int32_t & id) const {
+        return seq_id.find(id) != seq_id.end();
+    }
+};
+
+struct sense_voice_kv_cache {
+    uint32_t head = 0;
+    uint32_t size = 0;
+
+    // computed before each graph build
+    uint32_t n = 0;
+
+    std::vector<sense_voice_kv_cell> cells;
+
+    struct ggml_tensor * k;
+    struct ggml_tensor * v;
+
+    struct ggml_context * ctx = nullptr;
+
+    ggml_backend_buffer_t buffer = nullptr;
+};
+
 struct sense_voice_state {
     int64_t t_sample_us = 0;
     int64_t t_encode_us = 0;
@@ -328,6 +356,8 @@ struct sense_voice_state {
     int32_t n_fail_h = 0;  // number of entropy threshold failures
 
     float duration = 0;
+    // padded buffer for flash-attention
+    sense_voice_kv_cache kv_pad;
 
     // shared between all decoders
     sense_voice_feature feature;
