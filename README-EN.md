@@ -75,7 +75,7 @@ cd SenseVoice.cpp
 git submodule sync && git submodule update --init --recursive
 
 mkdir build && cd build
-cmake .. && make -j 8
+cmake -DCMAKE_BUILD_TYPE=Release .. && make -j 8
 
 # -t means thread num
 ./bin/sense-voice-main -m /path/gguf-fp16-sense-voice-small.bin /path/asr_example_zh.wav  -t 4
