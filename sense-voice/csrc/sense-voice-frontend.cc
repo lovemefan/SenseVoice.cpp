@@ -5,7 +5,6 @@
 #include "sense-voice-frontend.h"
 #include <algorithm>
 #include <cassert>
-#include <string>
 #include "ThreadPool.h"
 #include "log-mel-filter-bank.h"
 
@@ -23,6 +22,7 @@ void rdft(int n, int isgn, double *a, int *ip, double *w);
 static void rfft(const std::vector<double> &in) {
   int n = in.size();
   rdft(n, 1, (double *)in.data(), ip_.data(), (double *)w_.data());
+
 }
 
 inline int round_to_nearest_power_two(int n) {
@@ -65,6 +65,7 @@ static void fbank_feature_worker_thread(int ith,
   std::vector<double> window;
   const int padded_window_size = round_to_nearest_power_two(frame_size);
   window.resize(padded_window_size);
+
   // calculate FFT only when fft_in are not all zero
   int n_fft = std::min(n_samples / frame_step + 1, mel.n_len);
   for (; i < n_fft; i += n_threads) {
@@ -73,6 +74,12 @@ static void fbank_feature_worker_thread(int ith,
     std::copy(samples.begin() + offset, samples.begin() + offset + frame_size,
               window.begin());
 
+    {
+        // init window default 0, initialization values may result in NaN on arm cpu.
+        for (int k = frame_size; k < window.size(); k++) {
+            window[k] = 0;
+        }
+    }
     // remove dc offset
     {
       double sum = 0;
@@ -102,6 +109,7 @@ static void fbank_feature_worker_thread(int ith,
     // FFT
     // window is input and output
     rfft(window);
+
 
     // Calculate modulus^2 of complex numbers，Power Spectrum
     // Use pow(fft_out[2 * j + 0], 2) + pow(fft_out[2 * j + 1], 2) causes
@@ -161,15 +169,16 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
                                 frame_step * n_frames_per_ms, n_threads, feats);
   }
 
-//      if (debug) {
-//          std::ofstream outFile("fbank_lfr_cmvn_feature.json");
-//          outFile << "[";
-//          for (uint64_t i = 0; i < mel.data.size() - 1; i++) {
-//              outFile << mel.data[i] << ", ";
-//          }
-//          outFile << mel.data[mel.data.size() - 1] << "]";
-//          outFile.close();
-//      }
+  if (debug) {
+      auto &mel = feats.data;
+      std::ofstream outFile("fbank_lfr_cmvn_feature.json");
+      outFile << "[";
+      for (uint64_t i = 0; i < mel.size() - 1; i++) {
+          outFile << mel[i] << ", ";
+      }
+      outFile << mel[mel.size() - 1] << "]";
+      outFile.close();
+  }
 
   std::vector<std::vector<float>> out_feats;
 
