@@ -186,7 +186,7 @@ class SenseVoiceSmall(Model):
         self.sp.load(os.path.join(model_dir, "chn_jpn_yue_eng_ko_spectok.bpe.model"))
 
     def set_vocab(self):
-        tokens = [self.sp.id_to_piece(i) for i in range(self.sp.vocab_size())]
+        tokens = [self.sp.id_to_piece(i).replace("▁", " ") for i in range(self.sp.vocab_size())]
 
         self.gguf_writer.add_int32(f"tokenizer.vocab_size", self.sp.vocab_size())
 
