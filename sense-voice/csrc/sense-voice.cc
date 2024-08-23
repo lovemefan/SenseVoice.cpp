@@ -48,6 +48,17 @@ int sense_voice_lang_id(const char * lang) {
     return g_lang.at(lang).first;
 }
 
+const char * sense_voice_lang_str(int id) {
+    for (const auto & kv : g_lang) {
+        if (kv.second.first == id) {
+            return kv.first.c_str();
+        }
+    }
+
+    SENSE_VOICE_LOG_ERROR("%s: unknown language id %d\n", __func__, id);
+    return nullptr;
+}
+
 static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_voice_context_params & params) {
     ggml_backend_buffer_type_t result = nullptr;
 

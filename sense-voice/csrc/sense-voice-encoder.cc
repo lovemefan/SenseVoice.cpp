@@ -467,7 +467,8 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
 
 
             int _embedding[4];
-            _embedding[0] = 0;
+            // language, event, emo, textnorm
+            _embedding[0] = ctx.language_id;
             _embedding[1] = 1;
             _embedding[2] = 2;
             _embedding[3] = 14;

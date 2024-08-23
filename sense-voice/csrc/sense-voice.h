@@ -12,6 +12,7 @@
 
 
 int sense_voice_lang_id(const char * lang);
+const char * sense_voice_lang_str(int id);
 struct sense_voice_context_params sense_voice_context_default_params();
 struct sense_voice_context * sense_voice_small_init_from_file_with_params(const char * path_model, struct sense_voice_context_params params);
 struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_state(const char * path_model, struct sense_voice_context_params params);

@@ -471,6 +471,7 @@ struct sense_voice_context_params {
 struct sense_voice_context {
     int64_t t_load_ms = 0;
     int64_t t_start_ms = 0;
+    int32_t language_id = 0;
 
     ggml_type wtype = ggml_type::GGML_TYPE_F16;  // weight type (FP32 / FP16 / QX)
     ggml_type itype =
