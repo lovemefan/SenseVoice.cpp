@@ -15,7 +15,6 @@
 #include <functional>
 #ifdef GGML_USE_CUDA
 #include "ggml-cuda.h"
-#include "sense_voice-mel-cuda.hpp"
 #endif
 
 #ifdef GGML_USE_SYCL
@@ -31,7 +30,7 @@
 
 #define SENSE_VOICE_MAX_NODES 8192
 #define SENSE_VOICE_MAX_DECODERS 8
-#define SENSE_VOICE_CHUNK_SIZE 100
+#define SENSE_VOICE_CHUNK_SIZE 20
 #define SENSE_VOICE_FEATURES_DIM 560
 
 int sense_voice_lang_id(const char * lang) {
@@ -312,6 +311,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
                         cur->data);
             }
         }
+        ggml_backend_buffer_set_usage(sctx.model.buffer, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         gguf_free(gguf_ctx);
 
     }
@@ -454,17 +454,17 @@ static std::vector<ggml_backend_t> sense_voice_backend_init(
         result.push_back(backend_gpu);
     }
 
-//#ifdef GGML_USE_BLAS
-//    {
-//        SENSE_VOICE_LOG_INFO("%s: using BLAS backend\n", __func__);
-//        ggml_backend_t backend_blas = ggml_backend_blas_init();
-//        if (!backend_blas) {
-//            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_blas_init() failed\n", __func__);
-//        } else {
-//            result.push_back(backend_blas);
-//        }
-//    }
-//#endif
+#ifdef GGML_USE_BLAS
+    {
+        SENSE_VOICE_LOG_INFO("%s: using BLAS backend\n", __func__);
+        ggml_backend_t backend_blas = ggml_backend_blas_init();
+        if (!backend_blas) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_blas_init() failed\n", __func__);
+        } else {
+            result.push_back(backend_blas);
+        }
+    }
+#endif
 
     GGML_UNUSED(params);
 
@@ -633,26 +633,6 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
                                                    state->feature.n_len);
     }
 
-#ifdef USE_COREML
-    const auto path_coreml = PARAFORMER_get_coreml_path_encoder(ctx->path_model);
-
-    SENSE_VOICE_LOG_INFO("%s: loading Core ML model from '%s'\n", __func__,
-                        path_coreml.c_str());
-    SENSE_VOICE_LOG_INFO("%s: first run on a device may take a while ...\n",
-                        __func__);
-
-    state->ctx_coreml = PARAFORMER_coreml_init(path_coreml.c_str());
-    if (!state->ctx_coreml) {
-        SENSE_VOICE_LOG_INFO("%s: failed to load Core ML model from '%s'\n",
-                            __func__, path_coreml.c_str());
-#ifndef COREML_ALLOW_FALLBACK
-        delete state;
-        return nullptr;
-#endif
-    } else {
-        SENSE_VOICE_LOG_INFO("%s: Core ML model loaded\n", __func__);
-    }
-#endif
 
     state->logits_id.reserve(ctx->model.hparams.n_vocab);
 

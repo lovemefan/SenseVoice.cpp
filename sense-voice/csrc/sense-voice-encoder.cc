@@ -5,29 +5,27 @@
 #include "sense-voice-encoder.h"
 
 #include <cmath>
-#include <ggml.h>
-#include "ggml-alloc.h"
-#include "ggml-backend.h"
+
 #ifdef GGML_USE_METAL
 #include "ggml-metal.h"
 #endif
 
 #ifdef GGML_USE_CUDA
 #include "ggml-cuda.h"
-#include "whisper-mel-cuda.hpp"
 #endif
 
 #ifdef GGML_USE_SYCL
 #include "ggml-sycl.h"
 #endif
 
+#ifdef GGML_USE_BLAS
+#include "ggml-blas.h"
+#endif
+
 #ifdef GGML_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
 
-//#ifdef GGML_USE_BLAS
-//#include <ggml-blas.h>
-//#endif
 
 #include <cassert>
 #include <map>
@@ -35,6 +33,44 @@
 #include <vector>
 #define SENSE_VOICE_ENCODER_MAX_NODES 4096
 
+// faster matrix multiplications for tensors that do not have dimension 0 divisible by "pad"
+// the idea is to represent the original matrix multiplication:
+//
+//   Z = X @ Y
+//
+// with the sum of two matrix multiplications:
+//
+//   Z = (X_0 @ Y_0) + (X_1 @ Y_1)
+//
+// here X_0 and Y_0 are views of X and Y that have dimension 0 divisible by "pad"
+// and X_1 and Y_1 are the remaining views. X_1 and Y_1 end up being small matrices that can be processed with more
+// general-purpose kernels
+//
+static struct ggml_tensor * ggml_mul_mat_pad(struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * y, int pad = 32) {
+    // use padding only if dimension 0 is at least 8 times larger than the padding
+    // else we won't get much benefit from the optimization
+    const int n_pad_req = 8;
+
+    if (x->ne[0] % pad == 0 || x->ne[0] / pad < n_pad_req) {
+        return ggml_mul_mat(ctx, x, y);
+    }
+
+    struct ggml_tensor * x_0 = ggml_view_3d(ctx, x, (x->ne[0]/pad)*pad, x->ne[1], x->ne[2], x->nb[1], x->nb[2], 0);
+    struct ggml_tensor * x_1 = ggml_view_3d(ctx, x,  x->ne[0]%pad,      x->ne[1], x->ne[2], x->nb[1], x->nb[2], x_0->ne[0]*x_0->nb[0]);
+
+    struct ggml_tensor * y_0 = ggml_view_3d(ctx, y, (y->ne[0]/pad)*pad, y->ne[1], y->ne[2], y->nb[1], y->nb[2], 0);
+    struct ggml_tensor * y_1 = ggml_view_3d(ctx, y,  y->ne[0]%pad,      y->ne[1], y->ne[2], y->nb[1], y->nb[2], y_0->ne[0]*y_0->nb[0]);
+
+    return ggml_add(ctx,
+                    ggml_mul_mat(ctx, x_0, y_0),
+                    ggml_mul_mat(ctx, x_1, y_1));
+}
+
+// copy from whisper.cpp
+// TODO: CUDA is currently broken - seems ggml_mul_mat does not handle views correctly
+#if defined(GGML_USE_METAL)
+#define ggml_mul_mat ggml_mul_mat_pad
+#endif
 
 static const size_t MB = 1ull * 1024 * 1024;
 
@@ -116,11 +152,11 @@ static bool ggml_graph_compute_helper(
         if (ggml_backend_is_cpu(backend)) {
             ggml_backend_cpu_set_n_threads(backend, n_threads);
         }
-//#ifdef GGML_USE_BLAS
-//        if (ggml_backend_is_blas(backend)) {
-//            ggml_backend_blas_set_n_threads(backend, n_threads);
-//        }
-//#endif
+#ifdef GGML_USE_BLAS
+        if (ggml_backend_is_blas(backend)) {
+            ggml_backend_blas_set_n_threads(backend, n_threads);
+        }
+#endif
 
 #ifdef GGML_USE_METAL
         if (ggml_backend_is_metal(backend)) {
@@ -179,7 +215,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
         int n_ctx = cur->ne[1];
 
         Q = ggml_add(ctx0,
-                     ggml_mul_mat(ctx0, layer.e_attn_ln_q_w, cur),
+                     ggml_mul_mat_pad(ctx0, layer.e_attn_ln_q_w, cur),
                      layer.e_attn_ln_q_b);
 
         Q_h = ggml_reshape_3d(ctx0, Q, n_state / n_head, n_head, n_ctx);
@@ -230,7 +266,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
                 // im2col [n_state, length, kernel_size ]
                 struct ggml_tensor * im2col = ggml_im2col(ctx0, new_a,
                                                          ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
-                                                         1, 1, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F16);
 
 
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
@@ -249,7 +285,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
         if(user_flash_attn){
             const int n_ctx_pad = GGML_PAD(n_ctx, 256);
             const int n_state_head = n_state / n_head;
-            // todo flash attention is not available now
+
             ggml_build_forward_expand(gf, ggml_cpy(ctx0, K, ggml_view_1d(ctx0, state->kv_pad.k, n_ctx*n_state, 0)));
             ggml_build_forward_expand(gf, ggml_cpy(ctx0, V, ggml_view_1d(ctx0, state->kv_pad.v, n_ctx*n_state, 0)));
 
