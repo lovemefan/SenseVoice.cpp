@@ -18,18 +18,18 @@
 
 1. 支持更多backend , 理论上来说，ggml支持以下后端，后续将会慢慢适配，欢迎贡献。
 
-| 后端                                   | 平台                   | 是否支持 |
-|--------------------------------------|----------------------|------|
-| CPU                                  | All                  | ✅    |
-| [Metal](./docs/build.md#metal-build) | Apple Silicon        |      |   
-| [BLAS](./docs/build.md#blas-build)   | All                  |      |
-| [BLIS](./docs/backend/BLIS.md)       | All                  |      |
-| [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |      |
-| [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |      |
-| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           |      |
-| [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |      |
-| [Vulkan](./docs/build.md#vulkan)     | GPU                  |      |
-| [Cann](./docs/build.md#vulkan)       | Ascend NPU           |      |
+| 后端                                   | 平台                   | 是否支持            |
+|--------------------------------------|----------------------|-----------------|
+| CPU                                  | All                  | ✅               |
+| [Metal](./docs/build.md#metal-build) | Apple Silicon        | （im2col算子还有bug） |   
+| [BLAS](./docs/build.md#blas-build)   | All                  | ✅               |
+| [BLIS](./docs/backend/BLIS.md)       | All                  |                 |
+| [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |                 |
+| [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |                 |
+| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           |                 |
+| [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |                 |
+| [Vulkan](./docs/build.md#vulkan)     | GPU                  |                 |
+| [Cann](./docs/build.md#vulkan)       | Ascend NPU           |                 |
 
 
 2. 支持更多量化模型

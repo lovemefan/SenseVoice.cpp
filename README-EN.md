@@ -22,18 +22,18 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 
 1.	Support more backends. In theory, ggml supports the following backends, and future adaptations will be gradually made. Contributions are welcome.
 
-| Backend                                   | Device               | Supported |
-|--------------------------------------|----------------------|------|
-| CPU                                  | All                  | ✅    |
-| [Metal](./docs/build.md#metal-build) | Apple Silicon        |      |   
-| [BLAS](./docs/build.md#blas-build)   | All                  |      |
-| [BLIS](./docs/backend/BLIS.md)       | All                  |      |
-| [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |      |
-| [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |      |
-| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           |      |
-| [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |      |
-| [Vulkan](./docs/build.md#vulkan)     | GPU                  |      |
-| [Cann](./docs/build.md#vulkan)       | Ascend NPU           |      |
+| Backend                                   | Device               | Supported                      |
+|--------------------------------------|----------------------|--------------------------------|
+| CPU                                  | All                  | ✅                              |
+| [Metal](./docs/build.md#metal-build) | Apple Silicon        | (some bugs in im2col operator) |   
+| [BLAS](./docs/build.md#blas-build)   | All                  | ✅                              |
+| [BLIS](./docs/backend/BLIS.md)       | All                  |                                |
+| [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |                                |
+| [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |                                |
+| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           |                                |
+| [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |                                |
+| [Vulkan](./docs/build.md#vulkan)     | GPU                  |                                |
+| [Cann](./docs/build.md#vulkan)       | Ascend NPU           |                                |
 
 
 2.	Support more quantized models.
