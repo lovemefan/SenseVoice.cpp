@@ -31,8 +31,8 @@
 #include <map>
 #include <string>
 #include <vector>
-#define SENSE_VOICE_ENCODER_MAX_NODES 4096
-
+#define SENSE_VOICE_ENCODER_MAX_NODES 5120
+#define WARP_SIZE 32
 // faster matrix multiplications for tensors that do not have dimension 0 divisible by "pad"
 // the idea is to represent the original matrix multiplication:
 //
@@ -170,8 +170,8 @@ static bool ggml_graph_compute_helper(
     return t;
 }
 
-struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparams,
-                                               sense_voice_state *state,
+static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparams,
+                                               sense_voice_context &sctx,
                                                ggml_context *ctx0,
                                                ggml_tensor *cur,
                                                sense_voice_layer_encoder &layer,
@@ -180,6 +180,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
 
     const int n_state = hparams.n_encoder_hidden_state;
     const int n_head = hparams.n_encoder_attention_heads;
+    auto state = sctx.state;
 
     struct ggml_tensor *residual = nullptr;
 
@@ -192,9 +193,22 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
     {
         // layer norm
         // cur = ln_0_w*cur + ln_0_b
+#ifdef GGML_USE_CUDA
+        if (sctx.params.use_gpu) {
+            int32_t dim_size = cur->ne[0];
+            int32_t pad_size = WARP_SIZE - (dim_size % WARP_SIZE);
+            ggml_tensor * mean = ggml_mean(ctx0, cur);
+            ggml_tensor *repeat_mean = ggml_repeat(ctx0, mean, ggml_new_tensor_2d(ctx0, mean->type, pad_size, mean->ne[1]));
+            cur = ggml_cont(ctx0, ggml_concat(ctx0, repeat_mean, cur, 0));
+            cur = ggml_norm(ctx0, cur, hparams.eps);
+            cur = ggml_view_4d(ctx0, cur, dim_size, cur->ne[1], cur->ne[2], cur->ne[3], cur->nb[1], cur->nb[2], cur->nb[3], pad_size*cur->nb[0]);
+        }else{
+            cur = ggml_norm(ctx0, cur, hparams.eps);
+        }
+#else
         cur = ggml_norm(ctx0, cur, hparams.eps);
-        cur =
-                ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w1), layer.e_norm_b1);
+#endif
+        cur = ggml_add(ctx0, ggml_mul(ctx0, cur, layer.e_norm_w1), layer.e_norm_b1);
     }
 
     // self attention
@@ -256,7 +270,6 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
                 // same in pytorch : F.conv1d(input, weight, bias=None, stride=1, padding=1, dilation=1, groups=n_state)
                 struct ggml_tensor * a = layer.e_attn_fsmn_w;
                 struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
-
                 struct ggml_tensor * new_a = ggml_reshape_4d(ctx0,
                                                             a,
                                                             a->ne[0],
@@ -266,7 +279,7 @@ struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparam
                 // im2col [n_state, length, kernel_size ]
                 struct ggml_tensor * im2col = ggml_im2col(ctx0, new_a,
                                                          ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
-                                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F16);
+                                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
 
 
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
@@ -367,8 +380,6 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
 
     const auto &model = pctx.model.model;
     const auto &hparams = pctx.model.hparams;
-    const int n_ctx =
-            pstate.exp_n_audio_ctx > 0 ? pstate.exp_n_audio_ctx : hparams.n_audio_ctx;
 
     struct ggml_init_params params = {
             /*.mem_size   =*/pstate.sched_encode.meta.size(),
@@ -408,11 +419,11 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     cur = ggml_add(ctx0, position, cur);
 
     // encoders0 forward
-    cur = encoder_layer_sanm_forward(hparams, pctx.state, ctx0, cur, model->encoder->encoder0, gf, pctx.params.flash_attn);
+    cur = encoder_layer_sanm_forward(hparams, pctx, ctx0, cur, model->encoder->encoder0, gf, pctx.params.flash_attn);
 
     // encoders forward
     for (int i=0; i < hparams.n_encoder_layers - 1; i++){
-        cur = encoder_layer_sanm_forward(hparams, pctx.state, ctx0, cur, model->encoder->encoders_layer[i], gf, pctx.params.flash_attn);
+        cur = encoder_layer_sanm_forward(hparams, pctx, ctx0, cur, model->encoder->encoders_layer[i], gf, pctx.params.flash_attn);
     }
 
     {
@@ -425,7 +436,7 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     }
     // tp encoders forward
     for (int i=0; i < hparams.n_tp_encoder_layers; i++){
-        cur = encoder_layer_sanm_forward(hparams,  pctx.state, ctx0, cur, model->encoder->tp_encoders_layer[i], gf, pctx.params.flash_attn);
+        cur = encoder_layer_sanm_forward(hparams,  pctx, ctx0, cur, model->encoder->tp_encoders_layer[i], gf, pctx.params.flash_attn);
     }
 
     {
@@ -452,7 +463,6 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
     const int64_t t_start_us = ggml_time_us();
 
     const auto &model = ctx.model;
-    const auto &hparams = model.hparams;
 
 
     // encoder
