@@ -299,7 +299,7 @@ static void ggml_print_tensor(uint8_t * data, ggml_type type, const int64_t * ne
                         i0 = ne[0] - n;
                     }
                     size_t i = i3 * nb[3] + i2 * nb[2] + i1 * nb[1] + i0 * nb[0];
-                    float v;
+                    float v = 0;
                     if (type == GGML_TYPE_F16) {
                         v = ggml_fp16_to_fp32(*(ggml_fp16_t *) &data[i]);
                     } else if (type == GGML_TYPE_F32) {
@@ -435,13 +435,13 @@ int main(int argc, char ** argv) {
     cparams.flash_attn = params.flash_attn;
 
     struct sense_voice_context * ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
-    ctx->language_id = sense_voice_lang_id(params.language.c_str());
-
 
     if (ctx == nullptr) {
         fprintf(stderr, "error: failed to initialize sense voice context\n");
         return 3;
     }
+
+    ctx->language_id = sense_voice_lang_id(params.language.c_str());
 
     for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
         const auto fname_inp = params.fname_inp[f];
