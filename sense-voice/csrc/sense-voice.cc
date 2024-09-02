@@ -125,7 +125,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
     sense_voice.model_type =  gguf_get_val_str(gguf_ctx, 0);
     // load hparams
     {
-
+        hparams.ftype = gguf_get_val_u32(
+                gguf_ctx, gguf_find_key(gguf_ctx, "general.file_type"));
         hparams.n_vocab = gguf_get_val_i32(
                 gguf_ctx, gguf_find_key(gguf_ctx, "tokenizer.vocab_size"));
         hparams.n_encoder_hidden_state =
@@ -251,7 +252,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
             for (int i = 0; i < n_tensors; ++i) {
                 const char * name = gguf_get_tensor_name(gguf_ctx, i);
-                const size_t offset = gguf_get_tensor_offset(gguf_ctx, i);
                 struct ggml_tensor * cur = ggml_get_tensor(sctx.model.ctx, name);
                 size_t tensor_size = ggml_nbytes(cur);
                 buffer_size += tensor_size;
