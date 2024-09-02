@@ -125,8 +125,10 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
     sense_voice.model_type =  gguf_get_val_str(gguf_ctx, 0);
     // load hparams
     {
-        hparams.ftype = gguf_get_val_u32(
-                gguf_ctx, gguf_find_key(gguf_ctx, "general.file_type"));
+        if (gguf_find_key(gguf_ctx, "general.file_type") != -1) {
+            hparams.ftype = gguf_get_val_u32(
+                    gguf_ctx, gguf_find_key(gguf_ctx, "general.file_type"));
+        }
         hparams.n_vocab = gguf_get_val_i32(
                 gguf_ctx, gguf_find_key(gguf_ctx, "tokenizer.vocab_size"));
         hparams.n_encoder_hidden_state =
