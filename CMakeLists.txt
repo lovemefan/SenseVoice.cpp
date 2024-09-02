@@ -22,20 +22,7 @@ else ()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -pthread")
 endif ()
 
-set(SOURCE_FILES
-        sense-voice/csrc/common.h
-        sense-voice/csrc/common.cc
-        sense-voice/csrc/sense-voice-frontend.h
-        sense-voice/csrc/sense-voice-frontend.cc
-        sense-voice/csrc/fftsg.cc
-        sense-voice/csrc/log-mel-filter-bank.h
-        sense-voice/csrc/sense-voice-encoder.h
-        sense-voice/csrc/sense-voice-encoder.cc
-        sense-voice/csrc/sense-voice-decoder.h
-        sense-voice/csrc/sense-voice-decoder.cc
-        sense-voice/csrc/sense-voice.h
-        sense-voice/csrc/sense-voice.cc
-)
+
 
 option(BUILD_SHARED_LIBS "build shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
 
@@ -52,6 +39,9 @@ option(SENSE_VOICE_BUILD_TESTS "sense-voice: build tests" OFF)
 option(SENSE_VOICE_SANITIZE_THREAD    "sense-voice: enable thread sanitizer"    OFF)
 option(SENSE_VOICE_SANITIZE_ADDRESS   "sense-voice: enable address sanitizer"   OFF)
 option(SENSE_VOICE_SANITIZE_UNDEFINED "sense-voice: enable undefined sanitizer" OFF)
+
+# extra artifacts
+option(SENSE_VOICE_BUILD_EXAMPLES "whisper: build examples"       ON)
 
 # build
 option(SENSE_VOICE_FATAL_WARNINGS "sense-voice: enable -Werror flag" OFF)
@@ -77,17 +67,18 @@ if(GGML_USE_BLAS)
     add_definitions(-DGGML_USE_BLAS)
 endif()
 
+add_subdirectory(sense-voice)
 include_directories(${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/include/ggml ${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/src)
 add_subdirectory(sense-voice/csrc/third-party/ggml)
-add_library(sense-voice-core STATIC ${SOURCE_FILES})
+
 
 if (SENSEVOICE_BUILD_TESTS)
     message(DEBUG "Test scripts")
 #    add_subdirectory(test)
 endif ()
 
+if (SENSE_VOICE_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
-target_link_libraries(sense-voice-core PRIVATE ggml)
-add_executable(sense-voice-main sense-voice/csrc/main.cc)
-target_link_libraries(sense-voice-main PRIVATE sense-voice-core ggml)
 
