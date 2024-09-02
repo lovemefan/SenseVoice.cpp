@@ -16,6 +16,7 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 1.	Based on ggml, it does not rely on other third-party libraries and is committed to edge deployment.
 2.	Feature extraction references the [kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank) library, supporting multi-threaded feature extraction.
 3.	Flash attention decoding can be used (The speed has not improved 🤔 weird，need help).
+4.  Support Q3, Q4, Q5, Q6, Q8 quantization.
 
 ### 1.1 Future Plans
 
@@ -36,9 +37,8 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 | [Cann](./docs/build.md#vulkan)       | Ascend NPU           |                                |
 
 
-2.	Support more quantized models.
-3.	Improve performance.
-4.	Fix bugs.
+2. Improve performance.
+3. Fix bugs.
 
 ## 2. Usage
 

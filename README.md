@@ -13,6 +13,7 @@
 1. 基于ggml，不依赖其他第三方库, 致力于端侧部署
 2. 特征提取参考[kaldi-native-fbank](https://github.com/csukuangfj/kaldi-native-fbank)库，支持多线程特征提取。
 3. 可以使用flash attention解码（速度没有明显提升🤔不知道为啥）
+4. 支持Q3, Q4, Q5, Q6, Q8量化
 
 ### 1.1 未来计划
 
@@ -26,15 +27,14 @@
 | [BLIS](./docs/backend/BLIS.md)       | All                  |                 |
 | [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |                 |
 | [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |                 |
-| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           |                 |
+| [CUDA](./docs/build.md#cuda)         | Nvidia GPU           | 适配中             |
 | [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |                 |
 | [Vulkan](./docs/build.md#vulkan)     | GPU                  |                 |
 | [Cann](./docs/build.md#vulkan)       | Ascend NPU           |                 |
 
 
-2. 支持更多量化模型
-3. 提升性能
-4. 修bug
+4. 提升性能
+5. 修bug
 
 ## 2. 使用
 
