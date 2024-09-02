@@ -74,7 +74,6 @@ static struct ggml_tensor * ggml_mul_mat_pad(struct ggml_context * ctx, struct g
 struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx,
                                                     sense_voice_state &state){
     const auto &model = ctx.model.model;
-    const auto &hparams = ctx.model.hparams;
 
     struct ggml_init_params params = {
             /*.mem_size   =*/state.sched_decode.meta.size(),
@@ -137,10 +136,6 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
                                  sense_voice_state &state,
                                  const int n_threads) {
     const int64_t t_start_us = ggml_time_us();
-
-    const auto &model = ctx.model;
-    const auto &hparams = model.hparams;
-
 
     // decoder
     {
