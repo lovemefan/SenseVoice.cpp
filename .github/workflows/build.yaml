@@ -28,6 +28,7 @@ jobs:
             set -e
             apt update
             apt install -y build-essential libsdl2-dev git cmake
+            git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
             cmake .
             make'
@@ -75,6 +76,7 @@ jobs:
             set -e
             apt update
             apt install -y build-essential cmake git
+            git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
             cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
@@ -106,6 +108,7 @@ jobs:
             set -e
             apt update
             apt install -y clang build-essential cmake git
+            git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
             make'
@@ -134,6 +137,7 @@ jobs:
             set -e
             apt update
             apt install -y build-essential cmake git
+            git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=Debug -DSENSE_VOICE_SANITIZE_${{ matrix.sanitizer }}=ON
             make'
@@ -183,6 +187,7 @@ jobs:
         id: cmake_build
         run: |
           source /opt/intel/oneapi/setvars.sh
+          git config --global --add safe.directory /workspace
           git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
@@ -234,6 +239,7 @@ jobs:
         id: cmake_build
         run: |
           source /opt/intel/oneapi/setvars.sh
+          git config --global --add safe.directory /workspace
           git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
@@ -265,6 +271,9 @@ jobs:
             mingw-w64-${{matrix.env}}-cmake
             mingw-w64-${{matrix.env}}-SDL2
             mingw-w64-${{matrix.env}}-openblas
+
+      - name: Setup Git for Windows' minimal SDK
+        uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Build using CMake
         shell: msys2 {0}
@@ -307,6 +316,9 @@ jobs:
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
+
+      - name: Setup Git for Windows' minimal SDK
+        uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Configure
         run: >
@@ -367,6 +379,9 @@ jobs:
           copy blas/include/cblas.h .
           copy blas/include/openblas_config.h .
           echo "OPENBLAS_PATH=$env:GITHUB_WORKSPACE/blas" >> $env:GITHUB_ENV
+
+      - name: Setup Git for Windows' minimal SDK
+        uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Configure
         run: >
