@@ -30,6 +30,7 @@ jobs:
             apt install -y build-essential libsdl2-dev git cmake
             git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
+            git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             cmake .
             make'
 
@@ -78,6 +79,7 @@ jobs:
             apt install -y build-essential cmake git
             git config --global --add safe.directory /workspace
             git submodule sync && git submodule update --init --recursive
+            git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
             ctest -L gh --output-on-failure'
