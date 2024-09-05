@@ -28,6 +28,7 @@ jobs:
             set -e
             apt update
             apt install -y build-essential libsdl2-dev
+            git submodule sync && git submodule update --init --recursive
             cmake .
             make'
 
@@ -72,7 +73,8 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential cmake libsdl2-dev
+            apt install -y build-essential cmake libsdl2-dev git
+            git submodule sync && git submodule update --init --recursive
             cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
             ctest -L gh --output-on-failure'
@@ -102,7 +104,8 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y clang build-essential cmake
+            apt install -y clang build-essential cmake git
+            git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
             make'
 
@@ -129,7 +132,8 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential cmake
+            apt install -y build-essential cmake git
+            git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=Debug -DSENSE_VOICE_SANITIZE_${{ matrix.sanitizer }}=ON
             make'
 
@@ -163,7 +167,7 @@ jobs:
         shell: bash
         run: |
           sudo apt update
-          sudo apt install intel-oneapi-compiler-dpcpp-cpp
+          sudo apt install intel-oneapi-compiler-dpcpp-cpp git
 
       - name: install oneAPI MKL library
         shell: bash
@@ -178,6 +182,7 @@ jobs:
         id: cmake_build
         run: |
           source /opt/intel/oneapi/setvars.sh
+          git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
           cmake -DGGML_SYCL=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
@@ -228,6 +233,7 @@ jobs:
         id: cmake_build
         run: |
           source /opt/intel/oneapi/setvars.sh
+          git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
           cmake -DGGML_SYCL_F16=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
@@ -269,14 +275,11 @@ jobs:
         run: |
           make clean
 
-      - name: Build using make w/ OpenBLAS
-        shell: msys2 {0}
-        run: |
-          make GGML_OPENBLAS=1 -j $(nproc)
 
       - name: Build using CMake
         shell: msys2 {0}
         run: |
+          git submodule sync && git submodule update --init --recursive
           cmake -B build
           cmake --build build --config ${{ matrix.build }} -j $(nproc)
 
@@ -317,6 +320,7 @@ jobs:
 
       - name: Configure
         run: >
+          git submodule sync && git submodule update --init --recursive
           cmake -S . -B ./build -A ${{ matrix.arch }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build }}
         
@@ -376,6 +380,7 @@ jobs:
 
       - name: Configure
         run: >
+          git submodule sync && git submodule update --init --recursive
           cmake -S . -B ./build -A ${{ matrix.arch }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build }}
           -DGGML_OPENBLAS=${{ matrix.blas }}
