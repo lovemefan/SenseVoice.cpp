@@ -27,7 +27,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential libsdl2-dev
+            apt install -y build-essential libsdl2-dev git cmake
             git submodule sync && git submodule update --init --recursive
             cmake .
             make'
@@ -42,10 +42,11 @@ jobs:
       - name: Dependencies
         run: |
           brew update
-          brew install sdl2
+          brew install git cmake
 
       - name: Build
         run: |
+          git submodule sync && git submodule update --init --recursive
           cmake .
           make
 
@@ -73,7 +74,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential cmake libsdl2-dev git
+            apt install -y build-essential cmake git
             git submodule sync && git submodule update --init --recursive
             cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
@@ -167,7 +168,7 @@ jobs:
         shell: bash
         run: |
           sudo apt update
-          sudo apt install intel-oneapi-compiler-dpcpp-cpp git
+          sudo apt install intel-oneapi-compiler-dpcpp-cpp git cmake -y
 
       - name: install oneAPI MKL library
         shell: bash
@@ -218,7 +219,7 @@ jobs:
         shell: bash
         run: |
           sudo apt update
-          sudo apt install intel-oneapi-compiler-dpcpp-cpp
+          sudo apt install intel-oneapi-compiler-dpcpp-cpp cmake git -y
 
       - name: install oneAPI MKL library
         shell: bash
@@ -264,17 +265,6 @@ jobs:
             mingw-w64-${{matrix.env}}-cmake
             mingw-w64-${{matrix.env}}-SDL2
             mingw-w64-${{matrix.env}}-openblas
-
-      - name: Build using make
-        shell: msys2 {0}
-        run: |
-          make -j $(nproc)
-
-      - name: Clean after building using make
-        shell: msys2 {0}
-        run: |
-          make clean
-
 
       - name: Build using CMake
         shell: msys2 {0}
