@@ -74,7 +74,7 @@ mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release .. && make -j 8
 
 # -t means thread num， -t 指定线程数
-./bin/sense-voice-main -m /path/gguf-fp16-sense-voice-small.bin /path/asr_example_zh.wav  -t 4
+./bin/sense-voice-main -m /path/gguf-fp16-sense-voice-small.bin /path/asr_example_zh.wav  -t 4 -ng
 ```
 
 ### 输出
