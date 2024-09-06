@@ -280,7 +280,8 @@ jobs:
       - name: Build using CMake
         shell: msys2 {0}
         run: |
-          C:/Program Files/Git/cmd/git.exe submodule sync && C:/Program Files/Git/cmd/git.exe submodule update --init --recursive
+          export PATH="$PATH:/c/Program\ Files/Git/cmd"
+          git submodule sync && git submodule update --init --recursive
           cmake -B build
           cmake --build build --config ${{ matrix.build }} -j $(nproc)
 
