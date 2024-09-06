@@ -27,10 +27,10 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential libsdl2-dev git cmake
+            apt install -y build-essential git cmake
             git config --global --add safe.directory /workspace
-            git submodule sync && git submodule update --init --recursive
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
+            git submodule sync && git submodule update --init --recursive
             cmake .
             make'
 
@@ -78,8 +78,8 @@ jobs:
             apt update
             apt install -y build-essential cmake git
             git config --global --add safe.directory /workspace
-            git submodule sync && git submodule update --init --recursive
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
+            git submodule sync && git submodule update --init --recursive
             cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
             ctest -L gh --output-on-failure'
@@ -111,6 +111,7 @@ jobs:
             apt update
             apt install -y clang build-essential cmake git
             git config --global --add safe.directory /workspace
+            git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
             make'
@@ -140,6 +141,7 @@ jobs:
             apt update
             apt install -y build-essential cmake git
             git config --global --add safe.directory /workspace
+            git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
             cmake . -DCMAKE_BUILD_TYPE=Debug -DSENSE_VOICE_SANITIZE_${{ matrix.sanitizer }}=ON
             make'
@@ -190,6 +192,7 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           git config --global --add safe.directory /workspace
+          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
           git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
@@ -242,6 +245,7 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           git config --global --add safe.directory /workspace
+          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
           git submodule sync && git submodule update --init --recursive
           mkdir build
           cd build
@@ -271,7 +275,7 @@ jobs:
             base-devel
             mingw-w64-${{matrix.env}}-toolchain
             mingw-w64-${{matrix.env}}-cmake
-            mingw-w64-${{matrix.env}}-SDL2
+            mingw-w64-${{matrix.env}}-git
             mingw-w64-${{matrix.env}}-openblas
 
       - name: Setup Git for Windows' minimal SDK
@@ -309,8 +313,7 @@ jobs:
           - arch: x64
             s2arc: x64
             jnaPath: win32-x86-64
-          - sdl2: ON
-            s2ver: 2.28.5
+
 
     steps:
       - name: Clone
@@ -323,11 +326,10 @@ jobs:
         uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Configure
-        run: >
+        run: |
           git submodule sync && git submodule update --init --recursive
-          cmake -S . -B ./build -A ${{ matrix.arch }}
-          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-        
+          cmake -S . -B ./build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build }}
+          
 
       - name: Build
         run: |
@@ -363,8 +365,6 @@ jobs:
           - arch: x64
             obzip: https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.25/OpenBLAS-0.3.25-x64.zip
             s2arc: x64
-          - sdl2: ON
-            s2ver: 2.28.5
 
     steps:
       - name: Clone
@@ -386,12 +386,9 @@ jobs:
         uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Configure
-        run: >
+        run: |
           git submodule sync && git submodule update --init --recursive
-          cmake -S . -B ./build -A ${{ matrix.arch }}
-          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-          -DGGML_OPENBLAS=${{ matrix.blas }}
-          -DCMAKE_LIBRARY_PATH="$env:OPENBLAS_PATH/lib"
+          cmake -S . -B ./build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DGGML_OPENBLAS=${{ matrix.blas }} -DCMAKE_LIBRARY_PATH="$env:OPENBLAS_PATH/lib"
 
       - name: Build
         run: |
