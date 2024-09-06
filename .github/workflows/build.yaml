@@ -292,6 +292,7 @@ jobs:
       - name: Build using CMake w/ OpenBLAS
         shell: msys2 {0}
         run: |
+          git submodule sync && git submodule update --init --recursive
           cmake -B build -DGGML_OPENBLAS=ON
           cmake --build build --config ${{ matrix.build }} -j $(nproc)
 
