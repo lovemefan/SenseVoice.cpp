@@ -3,6 +3,9 @@
 //
 
 #include "common-ggml.h"
+#include <mutex>
+#include <climits>
+#include <stdarg.h>
 #include <inttypes.h>
 #include <thread>
 #include <regex>
@@ -313,8 +316,9 @@ bool sense_voice_ggml_quantize0(
                  new_type == GGML_TYPE_IQ2_XS  ||
                  new_type == GGML_TYPE_IQ2_S   ||
                  new_type == GGML_TYPE_IQ1_S   ||
-                 (new_type == GGML_TYPE_IQ1_M && strcmp(tensor->name, "token_embd.weight") && strcmp(tensor->name, "output.weight"))  ||
-                 (new_type == GGML_TYPE_Q2_K  && strcmp(tensor->name, "token_embd.weight") != 0)) && !imatrix) {
+                 (new_type == GGML_TYPE_IQ1_M && strcmp(tensor->name, "embed.weight") && strcmp(tensor->name, "ctc.ctc_lo.weight"))  ||
+                 (new_type == GGML_TYPE_Q2_K  && strcmp(tensor->name, "embed.weight") != 0)) && !imatrix)
+            {
                 printf("\n\n============================================================\n");
                 printf("Missing importance matrix for tensor %s in a very low-bit quantization\n", tensor->name);
                 printf("The result will be garbage, so bailing out\n");
