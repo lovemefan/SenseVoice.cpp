@@ -275,11 +275,7 @@ jobs:
             base-devel
             mingw-w64-${{matrix.env}}-toolchain
             mingw-w64-${{matrix.env}}-cmake
-            mingw-w64-${{matrix.env}}-git
             mingw-w64-${{matrix.env}}-openblas
-
-      - name: Setup Git for Windows' minimal SDK
-        uses: git-for-windows/setup-git-for-windows-sdk@v1
 
       - name: Build using CMake
         shell: msys2 {0}
