@@ -156,9 +156,7 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
         // set the input
         {
             struct ggml_tensor *encoder_out = ggml_graph_get_tensor(gf, "encoder_out");
-            ggml_backend_tensor_set(
-                    encoder_out, state.encoder_out->data, 0,
-                    ggml_nelements(encoder_out) * sizeof(float));
+            ggml_backend_tensor_copy(state.encoder_out, encoder_out);
         }
 
         if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
