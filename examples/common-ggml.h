@@ -8,7 +8,7 @@
 
 #include <fstream>
 #include <vector>
-#include <string>
+#include <cstring>
 
 enum ggml_ftype ggml_parse_ftype(const char * str);
 
