@@ -270,22 +270,51 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                 // same in pytorch : F.conv1d(input, weight, bias=None, stride=1, padding=1, dilation=1, groups=n_state)
                 struct ggml_tensor * a = layer.e_attn_fsmn_w;
                 struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
-                struct ggml_tensor * new_a = ggml_reshape_4d(ctx0,
-                                                            a,
-                                                            a->ne[0],
-                                                            1,
-                                                            a->ne[1],
-                                                            a->ne[2] * a->ne[3]);
-                // im2col [n_state, length, kernel_size ]
-                struct ggml_tensor * im2col = ggml_im2col(ctx0, new_a,
-                                                         ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
-                                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
 
+                struct ggml_tensor *im2col;
+                struct ggml_tensor * new_a;
+
+                if (sctx.params.use_gpu) {
+
+                    new_a = ggml_reshape_4d(ctx0,
+                                            a,
+                                            a->ne[0],
+                                            1,
+                                            a->ne[1],
+                                            a->ne[2] * a->ne[3]);
+
+                    auto new_b = ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]);
+
+                    im2col = ggml_im2col(ctx0, new_a,
+                                         new_b,
+                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+
+                    for (auto backend: sctx.state->backends){
+                        if (ggml_backend_is_cpu(backend)) {
+                            ggml_backend_sched_set_tensor_backend(sctx.state->sched_encode.sched, im2col, sctx.state->backends[2]);
+                            break;
+                        }
+                    }
+
+                }else {
+                    // im2col [n_state, length, kernel_size ]
+                    new_a = ggml_reshape_4d(ctx0,
+                                            a,
+                                            a->ne[0],
+                                            1,
+                                            a->ne[1],
+                                            a->ne[2] * a->ne[3]);
+//                    ggml_backend_sched_set_tensor_backend()
+
+                    im2col = ggml_im2col(ctx0, new_a,
+                                         ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
+                                         1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                }
 
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
                 // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [n_state, length , 1]
                 struct ggml_tensor * result = ggml_mul_mat(ctx0, new_a, im2col);
-                fsmn_memory = ggml_reshape_4d(ctx0, result, im2col->ne[1], im2col->ne[2], b->ne[2], b->ne[3]);
+                fsmn_memory = ggml_reshape_2d(ctx0, result, im2col->ne[1], im2col->ne[2]);
             }
             fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));
             fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
@@ -315,7 +344,7 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                                  ggml_element_size(state->kv_pad.v)*n_state,
                                  ggml_element_size(state->kv_pad.v)*n_state_head,
                                  0);
-            KQV = ggml_flash_attn_ext(ctx0, Q_h, K, V, nullptr, KQscale, 0.0f);
+            KQV = ggml_flash_attn_ext(ctx0, Q_h, K, V, nullptr, KQscale, 0.0f, 0.0f);
             cur = ggml_reshape_2d(ctx0, KQV, n_state, n_ctx);
         } else{
             // K * Q
@@ -475,6 +504,8 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
             // should never happen as we pre-allocate the memory
             return false;
         }
+
+//        ggml_backend_sched_set_tensor_backend(sched, ggml_graph_get_tensor(gf, ));
 
 
         // set the inputs
