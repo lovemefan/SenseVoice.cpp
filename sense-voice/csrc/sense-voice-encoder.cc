@@ -295,7 +295,7 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
 
                     for (auto backend: sctx.state->backends){
                         if (ggml_backend_is_cpu(backend)) {
-                            ggml_backend_sched_set_tensor_backend(sctx.state->sched_encode.sched, im2col, sctx.state->backends[2]);
+                            ggml_backend_sched_set_tensor_backend(sctx.state->sched_encode.sched, im2col, backend);
                             break;
                         }
                     }
