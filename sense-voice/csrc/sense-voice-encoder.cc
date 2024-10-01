@@ -194,14 +194,18 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
         // layer norm
         // cur = ln_0_w*cur + ln_0_b
 #ifdef GGML_USE_CUDA
-        if (sctx.params.use_gpu) {
-            int32_t dim_size = cur->ne[0];
+        int32_t dim_size = cur->ne[0];
+        if (sctx.params.use_gpu && dim_size % WARP_SIZE) {
             int32_t pad_size = WARP_SIZE - (dim_size % WARP_SIZE);
-            ggml_tensor * mean = ggml_mean(ctx0, cur);
-            ggml_tensor *repeat_mean = ggml_repeat(ctx0, mean, ggml_new_tensor_2d(ctx0, mean->type, pad_size, mean->ne[1]));
-            cur = ggml_cont(ctx0, ggml_concat(ctx0, repeat_mean, cur, 0));
-            cur = ggml_norm(ctx0, cur, hparams.eps);
-            cur = ggml_view_4d(ctx0, cur, dim_size, cur->ne[1], cur->ne[2], cur->ne[3], cur->nb[1], cur->nb[2], cur->nb[3], pad_size*cur->nb[0]);
+            ggml_tensor *mean = ggml_mean(ctx0, cur);
+            cur = ggml_sub(ctx0, cur, mean);
+            ggml_tensor *sigma = ggml_mul(ctx0, cur, cur);
+            sigma = ggml_sum_rows(ctx0, sigma);
+            cur = ggml_scale(ctx0, ggml_div(ctx0, cur, ggml_sqrt(ctx0, sigma)), sqrt(dim_size));
+            // cur = ggml_cont(ctx0, ggml_pad(ctx0, cur, pad_size, 0, 0, 0));
+            // cur = ggml_norm(ctx0, cur, hparams.eps);
+            // cur = ggml_cont(ctx0, ggml_view_4d(ctx0, cur, dim_size, cur->ne[1], cur->ne[2], cur->ne[3], cur->nb[1], cur->nb[2], cur->nb[3], 0));
+            // cur = ggml_scale(ctx0, cur, sqrt(float(dim_size) / (dim_size + pad_size)));
         }else{
             cur = ggml_norm(ctx0, cur, hparams.eps);
         }
