@@ -26,7 +26,7 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 | Backend                                   | Device               | Supported                      |
 |--------------------------------------|----------------------|--------------------------------|
 | CPU                                  | All                  | ✅                              |
-| [Metal](./docs/build.md#metal-build) | Apple Silicon        | (some bugs in im2col operator) |   
+| [Metal](./docs/build.md#metal-build) | Apple Silicon        |  ✅ |   
 | [BLAS](./docs/build.md#blas-build)   | All                  | ✅                              |
 | [BLIS](./docs/backend/BLIS.md)       | All                  |                                |
 | [SYCL](./docs/backend/SYCL.md)       | Intel and Nvidia GPU |                                |
