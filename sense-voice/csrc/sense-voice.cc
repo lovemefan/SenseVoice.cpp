@@ -24,8 +24,13 @@
 #ifdef GGML_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
+
 #ifdef GGML_USE_BLAS
 #include "ggml-blas.h"
+#endif
+
+#ifdef GGML_USE_CANN
+#include "ggml-cann.h"
 #endif
 
 #define SENSE_VOICE_MAX_NODES 8192
@@ -77,6 +82,10 @@ static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_vo
 
 #ifdef GGML_USE_VULKAN
     result || (result = ggml_backend_vk_buffer_type(params.gpu_device));
+#endif
+
+#ifdef GGML_USE_CANN
+    result || (result == ggml_backend_cann_buffer_type(params.gpu_device));
 #endif
 
     result || (result = ggml_backend_cpu_buffer_type());
@@ -416,6 +425,16 @@ static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_par
         result = ggml_backend_sycl_init(params.gpu_device);
         if (!result) {
             SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_CANN
+    if (params.use_gpu) {
+        WHISPER_LOG_INFO("%s: using CANN backend\n", __func__);
+        result = ggml_backend_cann_init(params.gpu_device);
+        if (!result) {
+            WHISPER_LOG_ERROR("%s: ggml_backend_cann_init() failed\n", __func__);
         }
     }
 #endif
