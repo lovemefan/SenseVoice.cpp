@@ -308,7 +308,6 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                                             1,
                                             a->ne[1],
                                             a->ne[2] * a->ne[3]);
-//                    ggml_backend_sched_set_tensor_backend()
 
                     im2col = ggml_im2col(ctx0, new_a,
                                          ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]),
@@ -354,11 +353,8 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
             // K * Q
             struct ggml_tensor *KQ = ggml_mul_mat(ctx0, K_h, Q_h);
 
-            struct ggml_tensor *KQ_scaled = ggml_scale(ctx0, KQ, KQscale);
-            ggml_set_name(KQ_scaled, "score");
+            struct ggml_tensor *KQ_soft_max = ggml_soft_max_ext(ctx0, KQ, nullptr, KQscale, 0.0f);
 
-            struct ggml_tensor *KQ_soft_max = ggml_soft_max(ctx0, KQ_scaled);
-            ggml_set_name(KQ_soft_max, "attention");
 
             KQV = ggml_mul_mat(
                     ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, V_h)), KQ_soft_max);
