@@ -114,7 +114,7 @@ static void fbank_feature_worker_thread(int ith,
     // Calculate modulus^2 of complex numbers，Power Spectrum
     // Use pow(fft_out[2 * j + 0], 2) + pow(fft_out[2 * j + 1], 2) causes
     // inference quality problem? Interesting.
-    for (int j = 0; j < padded_window_size; j++) {
+    for (int j = 0; j < padded_window_size / 2; j++) {
       window[j] = (window[2 * j + 0] * window[2 * j + 0] +
                    window[2 * j + 1] * window[2 * j + 1]);
     }
