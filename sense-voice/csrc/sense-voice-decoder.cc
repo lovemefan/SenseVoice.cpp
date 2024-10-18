@@ -164,8 +164,10 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
         }
         {
             ggml_tensor *argmax_logit = ggml_graph_node(gf, ggml_graph_n_nodes(gf) - 1);
+            int* argmax = new int[argmax_logit->ne[0]];
+            ggml_backend_tensor_get(argmax_logit, argmax, 0, sizeof(int) * argmax_logit->ne[0]);
 
-            state.ids = std::vector<int>((int *)argmax_logit->data, (int *)argmax_logit->data + argmax_logit->ne[0]);
+            state.ids = std::vector<int>(argmax, argmax + argmax_logit->ne[0]);
 
             for(int id: state.ids){
                 if (id != 0) {
