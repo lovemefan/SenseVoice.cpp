@@ -93,6 +93,66 @@ static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_vo
     return result;
 }
 
+static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
+    ggml_backend_t result = nullptr;
+
+#ifdef GGML_USE_CUDA
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
+        result = ggml_backend_cuda_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_METAL
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using Metal backend\n", __func__);
+        result = ggml_backend_metal_init();
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
+        } else if (!ggml_backend_metal_supports_family(result, 7)) {
+            SENSE_VOICE_LOG_ERROR("%s: Metal GPU does not support family 7 - falling back to CPU\n", __func__);
+            ggml_backend_free(result);
+            result = nullptr;
+        }
+    }
+#endif
+
+#ifdef GGML_USE_SYCL
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
+        result = ggml_backend_sycl_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_CANN
+    if (params.use_gpu) {
+        WHISPER_LOG_INFO("%s: using CANN backend\n", __func__);
+        result = ggml_backend_cann_init(params.gpu_device);
+        if (!result) {
+            WHISPER_LOG_ERROR("%s: ggml_backend_cann_init() failed\n", __func__);
+        }
+    }
+#endif
+
+#ifdef GGML_USE_VULKAN
+    if (params.use_gpu) {
+        SENSE_VOICE_LOG_INFO("%s: using Vulkan backend\n", __func__);
+        result = ggml_backend_vk_init(params.gpu_device);
+        if (!result) {
+            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_vk_init() failed\n", __func__);
+        }
+    }
+#endif
+
+    return result;
+}
+
 // load the model from a gguf file
 // see the convert-pt-to-ggml.py script for details
 bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
@@ -238,8 +298,14 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
         // initialize all memory buffers
         // always have at least one decoder
+        // Todo : remove this if else when ggml_backend_metal_buffer_type_get_max_size is available
+        if (sctx.params.use_gpu) {
+            sctx.model.buffer = ggml_backend_alloc_ctx_tensors(sctx.model.ctx, sense_voice_backend_init_gpu(sctx.params));
+        } else{
+            sctx.model.buffer = ggml_backend_alloc_ctx_tensors_from_buft(sctx.model.ctx, sense_voice_default_buffer_type(sctx.params));
+        }
+//        sctx.model.buffer = ggml_backend_alloc_ctx_tensors(sctx.model.ctx, ggml_backend_metal_init());
 
-        sctx.model.buffer = ggml_backend_alloc_ctx_tensors_from_buft(sctx.model.ctx, sense_voice_default_buffer_type(sctx.params));
 
         if (!sctx.model.buffer) {
             SENSE_VOICE_LOG_ERROR("%s: failed to allocate memory for the model\n", __func__);
@@ -391,66 +457,6 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
     return ctx;
 }
 
-static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
-    ggml_backend_t result = nullptr;
-
-#ifdef GGML_USE_CUDA
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
-        result = ggml_backend_cuda_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_METAL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using Metal backend\n", __func__);
-        ggml_backend_metal_log_set_callback(g_state.log_callback, g_state.log_callback_user_data);
-        result = ggml_backend_metal_init();
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
-        } else if (!ggml_backend_metal_supports_family(result, 7)) {
-            SENSE_VOICE_LOG_ERROR("%s: Metal GPU does not support family 7 - falling back to CPU\n", __func__);
-            ggml_backend_free(result);
-            result = nullptr;
-        }
-    }
-#endif
-
-#ifdef GGML_USE_SYCL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
-        result = ggml_backend_sycl_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_CANN
-    if (params.use_gpu) {
-        WHISPER_LOG_INFO("%s: using CANN backend\n", __func__);
-        result = ggml_backend_cann_init(params.gpu_device);
-        if (!result) {
-            WHISPER_LOG_ERROR("%s: ggml_backend_cann_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_VULKAN
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using Vulkan backend\n", __func__);
-        result = ggml_backend_vk_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_vk_init() failed\n", __func__);
-        }
-    }
-#endif
-
-    return result;
-}
 
 struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_state(const char * path_model, struct sense_voice_context_params params) {
     SENSE_VOICE_LOG_INFO("%s: loading model from '%s'\n", __func__, path_model);
