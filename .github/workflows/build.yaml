@@ -434,10 +434,9 @@ jobs:
 
 
       - name: Configure
-        run: >
-          cmake -S . -B ./build -A ${{ matrix.arch }}
-          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-          -DGGML_CUDA=${{ matrix.cublas }}
+        run: |
+          git submodule sync && git submodule update --init --recursive
+          cmake -S . -B ./build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DGGML_CUDA=${{ matrix.cublas }}
 
       - name: Build ${{ matrix.cuda-toolkit }}
         run: |
