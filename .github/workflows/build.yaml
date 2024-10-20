@@ -405,60 +405,60 @@ jobs:
           name: sense-voice-blas-bin-${{ matrix.arch }}
           path: build/bin/${{ matrix.build }}
 
-#  windows-cublas:
-#    runs-on: windows-2019
-#
-#    strategy:
-#      matrix:
-#        build: [Release]
-#        arch: [x64]
-#        cublas: [ON]
-#        sdl2: [ON]
-#        cuda-toolkit: [12.2.0, 11.8.0]
-#        include:
-#          - arch: x64
-#            s2arc: x64
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Add msbuild to PATH
-#        uses: microsoft/setup-msbuild@v2
-#
-#      - name: Install CUDA Toolkit
-#        id: cuda-toolkit
-#        uses: Jimver/cuda-toolkit@v0.2.15
-#        with:
-#          cuda: '${{ matrix.cuda-toolkit }}'
-#
-#
-#      - name: Configure
-#        run: >
-#          cmake -S . -B ./build -A ${{ matrix.arch }}
-#          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-#          -DGGML_CUDA=${{ matrix.cublas }}
-#
-#      - name: Build ${{ matrix.cuda-toolkit }}
-#        run: |
-#          cd ./build
-#          cmake --build . --config ${{ matrix.build }}
-#
-#      - name: Copy CUDA DLLs
-#        run: >
-#          Copy-Item -PassThru
-#          -Path "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/*.dll"
-#          -Include cudart64_*,cublas64_*,cublasLt64_*
-#          -Destination build/bin/${{ matrix.build }}
-#
-#      - name: Copy SDL2.dll
-#        if: matrix.sdl2 == 'ON'
-#        run: copy "$env:SDL2_DIR/../lib/${{ matrix.s2arc }}/SDL2.dll" build/bin/${{ matrix.build }}
-#
-#      - name: Upload binaries
-#        if: matrix.sdl2 == 'ON'
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: sense-voice-cublas-${{ matrix.cuda-toolkit }}-bin-${{ matrix.arch }}
-#          path: build/bin/${{ matrix.build }}
+  windows-cublas:
+    runs-on: windows-2019
+
+    strategy:
+      matrix:
+        build: [Release]
+        arch: [x64]
+        cublas: [ON]
+        sdl2: [ON]
+        cuda-toolkit: [12.2.0, 11.8.0]
+        include:
+          - arch: x64
+            s2arc: x64
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install CUDA Toolkit
+        id: cuda-toolkit
+        uses: Jimver/cuda-toolkit@v0.2.15
+        with:
+          cuda: '${{ matrix.cuda-toolkit }}'
+
+
+      - name: Configure
+        run: >
+          cmake -S . -B ./build -A ${{ matrix.arch }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
+          -DGGML_CUDA=${{ matrix.cublas }}
+
+      - name: Build ${{ matrix.cuda-toolkit }}
+        run: |
+          cd ./build
+          cmake --build . --config ${{ matrix.build }}
+
+      - name: Copy CUDA DLLs
+        run: >
+          Copy-Item -PassThru
+          -Path "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/*.dll"
+          -Include cudart64_*,cublas64_*,cublasLt64_*
+          -Destination build/bin/${{ matrix.build }}
+
+      - name: Copy SDL2.dll
+        if: matrix.sdl2 == 'ON'
+        run: copy "$env:SDL2_DIR/../lib/${{ matrix.s2arc }}/SDL2.dll" build/bin/${{ matrix.build }}
+
+      - name: Upload binaries
+        if: matrix.sdl2 == 'ON'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sense-voice-cublas-${{ matrix.cuda-toolkit }}-bin-${{ matrix.arch }}
+          path: build/bin/${{ matrix.build }}
 
