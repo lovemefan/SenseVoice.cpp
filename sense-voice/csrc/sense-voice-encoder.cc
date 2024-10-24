@@ -270,14 +270,6 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                 struct ggml_tensor * new_a = ggml_reshape_4d(ctx0, a, a->ne[0], 1, a->ne[1], a->ne[2] * a->ne[3]);;
                 struct ggml_tensor *im2col = ggml_im2col(ctx0, new_a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
 
-#ifdef GGML_USE_METAL
-                for (auto backend: sctx.state->backends){
-                    if (ggml_backend_is_cpu(backend)) {
-                        ggml_backend_sched_set_tensor_backend(sctx.state->sched_encode.sched, im2col, backend);
-                        break;
-                    }
-                }
-#endif
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
                 // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [n_state, length , 1]
                 struct ggml_tensor * result = ggml_mul_mat(ctx0, new_a, im2col);
