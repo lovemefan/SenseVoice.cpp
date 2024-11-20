@@ -57,6 +57,7 @@ struct sense_voice_params {
     bool log_score       = false;
     bool use_gpu         = true;
     bool flash_attn      = false;
+    bool use_itn         = false;
 
     std::string language  = "auto";
     std::string prompt;
@@ -160,6 +161,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -ls,       --log-score         [%-7s] log best decoder scores of tokens\n",              params.log_score?"true":"false");
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n",                                params.flash_attn ? "true" : "false");
+    fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
@@ -241,6 +243,7 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-ng"   || arg == "--no-gpu")          { params.use_gpu         = false; }
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
+        else if (arg == "-itn"   || arg == "--use-itn")        { params.use_itn         = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -433,6 +436,7 @@ int main(int argc, char ** argv) {
 
     cparams.use_gpu    = params.use_gpu;
     cparams.flash_attn = params.flash_attn;
+    cparams.use_itn    = params.use_itn;
 
     struct sense_voice_context * ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
 
