@@ -9,12 +9,7 @@
 #include <string>
 #include <map>
 #include <set>
-#include <ggml.h>
-#include <ggml-alloc.h>
-
-#ifdef GGML_USE_CUDA
-#include "ggml-cuda.h"
-#endif
+#include <ggml-cpu.h>
 
 #include "sense-voice-frontend.h"
 
