@@ -399,7 +399,7 @@ static std::vector<ggml_backend_t> sense_voice_backend_init(
 
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
-        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_ACCEL or ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_ACCEL || ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
             SENSE_VOICE_LOG_INFO("%s: using %s backend\n", __func__, ggml_backend_dev_name(dev));
             ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
             if (!backend) {
