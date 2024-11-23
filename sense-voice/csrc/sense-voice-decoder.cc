@@ -3,32 +3,6 @@
 //
 
 #include "sense-voice-decoder.h"
-#include <ggml.h>
-#include "ggml-alloc.h"
-#include "ggml-backend.h"
-#ifdef GGML_USE_METAL
-#include "ggml-metal.h"
-#endif
-
-#ifdef GGML_USE_METAL
-#include "ggml-metal.h"
-#endif
-
-#ifdef GGML_USE_CUDA
-#include "ggml-cuda.h"
-#endif
-
-#ifdef GGML_USE_SYCL
-#include "ggml-sycl.h"
-#endif
-
-#ifdef GGML_USE_BLAS
-#include "ggml-blas.h"
-#endif
-
-#ifdef GGML_USE_VULKAN
-#include "ggml-vulkan.h"
-#endif
 
 #define SENSEVOICE_DECODER_MAX_NODES 8
 
@@ -111,15 +85,15 @@ static bool ggml_graph_compute_helper(
 
     for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
         ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
-        if (ggml_backend_is_cpu(backend)) {
-            ggml_backend_cpu_set_n_threads(backend, n_threads);
+        ggml_backend_dev_t dev = ggml_backend_get_device(backend);
+        ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
+
+        auto * fn_set_n_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+        if (fn_set_n_threads) {
+            fn_set_n_threads(backend, n_threads);
         }
-        #ifdef GGML_USE_BLAS
-                if (ggml_backend_is_blas(backend)) {
-                    ggml_backend_blas_set_n_threads(backend, n_threads);
-                }
-        #endif
     }
+
 
     bool t = ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS;
     ggml_backend_sched_reset(sched);
