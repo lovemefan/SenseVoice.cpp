@@ -3,30 +3,7 @@
 //
 
 #include "sense-voice-encoder.h"
-
 #include <cmath>
-
-#ifdef GGML_USE_METAL
-#include "ggml-metal.h"
-#endif
-
-#ifdef GGML_USE_CUDA
-#include "ggml-cuda.h"
-#endif
-
-#ifdef GGML_USE_SYCL
-#include "ggml-sycl.h"
-#endif
-
-#ifdef GGML_USE_BLAS
-#include "ggml-blas.h"
-#endif
-
-#ifdef GGML_USE_VULKAN
-#include "ggml-vulkan.h"
-#endif
-
-
 #include <cassert>
 #include <map>
 #include <string>
@@ -93,53 +70,6 @@ struct sense_voice_context_params sense_voice_context_default_params() {
     return result;
 }
 
-static ggml_backend_t sense_voice_backend_init(
-        const sense_voice_context_params &params) {
-    ggml_backend_t backend_gpu = nullptr;
-
-    // initialize the backends
-#ifdef GGML_USE_CUDA
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
-        backend_gpu = ggml_backend_cuda_init(params.gpu_device);
-        if (!backend_gpu) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_METAL
-    if (params.use_gpu) {
-        SENSEVOICE_LOG_INFO("%s: using Metal backend\n", __func__);
-        backend_gpu = ggml_backend_metal_init();
-        if (!backend_gpu) {
-            SENSEVOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
-        } else if (!ggml_backend_metal_supports_family(backend_gpu, 7)) {
-            SENSEVOICE_LOG_ERROR(
-                    "%s: Metal GPU does not support family 7 - falling back to CPU\n",
-                    __func__);
-            ggml_backend_free(backend_gpu);
-            backend_gpu = nullptr;
-        }
-    }
-#endif
-
-#ifdef GGML_USE_SYCL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
-        backend_gpu = ggml_backend_sycl_init(params.gpu_device);
-        if (!backend_gpu) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
-        }
-    }
-#endif
-
-    if (backend_gpu) {
-        return backend_gpu;
-    }
-    return ggml_backend_cpu_init();
-}
-
 
 static bool ggml_graph_compute_helper(
         ggml_backend_sched_t   sched,
@@ -148,15 +78,15 @@ static bool ggml_graph_compute_helper(
 
     for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
         ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
-        if (ggml_backend_is_cpu(backend)) {
-            ggml_backend_cpu_set_n_threads(backend, n_threads);
+        ggml_backend_dev_t dev = ggml_backend_get_device(backend);
+        ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
+
+        auto * fn_set_n_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+        if (fn_set_n_threads) {
+            fn_set_n_threads(backend, n_threads);
         }
-#ifdef GGML_USE_BLAS
-        if (ggml_backend_is_blas(backend)) {
-            ggml_backend_blas_set_n_threads(backend, n_threads);
-        }
-#endif
     }
+
 
     bool t = ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS;
     ggml_backend_sched_reset(sched);
@@ -447,8 +377,6 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
                                        sense_voice_state &state,
                                        const int n_threads) {
     const int64_t t_start_us = ggml_time_us();
-
-    const auto &model = ctx.model;
 
 
     // encoder
