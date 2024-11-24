@@ -6,32 +6,9 @@
 #include "sense-voice-decoder.h"
 #include "sense-voice-cmvn.h"
 #include "common.h"
-
 #include <cassert>
-#ifdef GGML_USE_METAL
-#include "ggml-metal.h"
-#endif
 #include <thread>
 #include <functional>
-#ifdef GGML_USE_CUDA
-#include "ggml-cuda.h"
-#endif
-
-#ifdef GGML_USE_SYCL
-#include "ggml-sycl.h"
-#endif
-
-#ifdef GGML_USE_VULKAN
-#include "ggml-vulkan.h"
-#endif
-
-#ifdef GGML_USE_BLAS
-#include "ggml-blas.h"
-#endif
-
-#ifdef GGML_USE_CANN
-#include "ggml-cann.h"
-#endif
 
 #define SENSE_VOICE_MAX_NODES 8192
 #define SENSE_VOICE_MAX_DECODERS 8
@@ -64,91 +41,34 @@ const char * sense_voice_lang_str(int id) {
 }
 
 static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_voice_context_params & params) {
-    ggml_backend_buffer_type_t result = nullptr;
+    if (!params.use_gpu) {
+        return ggml_backend_cpu_buffer_type();
+    }
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU) {
+            SENSE_VOICE_LOG_INFO("%s: using device %s (%s)\n", __func__, ggml_backend_dev_name(dev), ggml_backend_dev_description(dev));
+            return ggml_backend_dev_buffer_type(dev);
+        }
+    }
 
-    params.use_gpu || (result = ggml_backend_cpu_buffer_type());
-
-#ifdef GGML_USE_CUDA
-    result || (result = ggml_backend_cuda_buffer_type(params.gpu_device));
-#endif
-
-#ifdef GGML_USE_METAL
-    result || (result = ggml_backend_metal_buffer_type());
-#endif
-
-#ifdef GGML_USE_SYCL
-    result || (result = ggml_backend_sycl_buffer_type(params.gpu_device));
-#endif
-
-#ifdef GGML_USE_VULKAN
-    result || (result = ggml_backend_vk_buffer_type(params.gpu_device));
-#endif
-
-#ifdef GGML_USE_CANN
-    result || (result == ggml_backend_cann_buffer_type(params.gpu_device));
-#endif
-
-    result || (result = ggml_backend_cpu_buffer_type());
-
-    return result;
+    return ggml_backend_cpu_buffer_type();
 }
 
 static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
     ggml_backend_t result = nullptr;
 
-#ifdef GGML_USE_CUDA
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using CUDA backend\n", __func__);
-        result = ggml_backend_cuda_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_cuda_init() failed\n", __func__);
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU) {
+            SENSE_VOICE_LOG_INFO("%s: using %s backend\n", __func__, ggml_backend_dev_name(dev));
+            ggml_backend_t result = ggml_backend_dev_init(dev, nullptr);
+            if (!result) {
+                SENSE_VOICE_LOG_ERROR("%s: failed to initialize %s backend\n", __func__, ggml_backend_dev_name(dev));
+            }
+            return result;
         }
     }
-#endif
-
-#ifdef GGML_USE_METAL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using Metal backend\n", __func__);
-        result = ggml_backend_metal_init();
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_metal_init() failed\n", __func__);
-        } else if (!ggml_backend_metal_supports_family(result, 7)) {
-            SENSE_VOICE_LOG_ERROR("%s: Metal GPU does not support family 7 - falling back to CPU\n", __func__);
-            ggml_backend_free(result);
-            result = nullptr;
-        }
-    }
-#endif
-
-#ifdef GGML_USE_SYCL
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using SYCL backend\n", __func__);
-        result = ggml_backend_sycl_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_sycl_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_CANN
-    if (params.use_gpu) {
-        WHISPER_LOG_INFO("%s: using CANN backend\n", __func__);
-        result = ggml_backend_cann_init(params.gpu_device);
-        if (!result) {
-            WHISPER_LOG_ERROR("%s: ggml_backend_cann_init() failed\n", __func__);
-        }
-    }
-#endif
-
-#ifdef GGML_USE_VULKAN
-    if (params.use_gpu) {
-        SENSE_VOICE_LOG_INFO("%s: using Vulkan backend\n", __func__);
-        result = ggml_backend_vk_init(params.gpu_device);
-        if (!result) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_vk_init() failed\n", __func__);
-        }
-    }
-#endif
 
     return result;
 }
@@ -286,15 +206,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
     vocab.n_vocab = sense_voice.hparams.n_vocab;
 
-    size_t ctx_size = 0;
-
-    const ggml_type wtype = sctx.wtype;
-    const ggml_type vtype =
-            sctx.wtype == GGML_TYPE_F32 ? GGML_TYPE_F32 : GGML_TYPE_F16;  // conv
-
 
     {
-        const auto &hparams = sense_voice.hparams;
 
         // initialize all memory buffers
         // always have at least one decoder
@@ -444,6 +357,9 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
     SENSE_VOICE_LOG_INFO("%s: use gpu    = %d\n", __func__, params.use_gpu);
     SENSE_VOICE_LOG_INFO("%s: flash attn = %d\n", __func__, params.flash_attn);
     SENSE_VOICE_LOG_INFO("%s: gpu_device = %d\n", __func__, params.gpu_device);
+    SENSE_VOICE_LOG_INFO("%s: devices    = %zu\n", __func__, ggml_backend_dev_count());
+    SENSE_VOICE_LOG_INFO("%s: backends   = %zu\n", __func__, ggml_backend_reg_count());
+
     auto *ctx = new struct sense_voice_context;
 
     ctx->params = params;
@@ -481,21 +397,20 @@ static std::vector<ggml_backend_t> sense_voice_backend_init(
         result.push_back(backend_gpu);
     }
 
-#ifdef GGML_USE_BLAS
-    {
-        SENSE_VOICE_LOG_INFO("%s: using BLAS backend\n", __func__);
-        ggml_backend_t backend_blas = ggml_backend_blas_init();
-        if (!backend_blas) {
-            SENSE_VOICE_LOG_ERROR("%s: ggml_backend_blas_init() failed\n", __func__);
-        } else {
-            result.push_back(backend_blas);
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_ACCEL || ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+            SENSE_VOICE_LOG_INFO("%s: using %s backend\n", __func__, ggml_backend_dev_name(dev));
+            ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
+            if (!backend) {
+                SENSE_VOICE_LOG_ERROR("%s: failed to initialize %s backend\n", __func__, ggml_backend_dev_name(dev));
+                continue;
+            }
+            result.push_back(backend);
         }
     }
-#endif
 
     GGML_UNUSED(params);
-
-    result.push_back(ggml_backend_cpu_init());
 
     return result;
 }
