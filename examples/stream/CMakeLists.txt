@@ -1,0 +1,5 @@
+include_directories(${PROJECT_SOURCE_DIR}/sense-voice/csrc)
+# find_package(SDL2 REQUIRED)
+# include_directories(${SDL2_INCLUDE_DIRS})
+add_executable(sense-voice-stream stream.cc)
+target_link_libraries(sense-voice-stream PRIVATE sense-voice-core ggml common streamSDL)
