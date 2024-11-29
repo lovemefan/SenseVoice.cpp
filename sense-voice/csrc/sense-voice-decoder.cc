@@ -134,14 +134,14 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
             ggml_tensor *argmax_logit = ggml_graph_node(gf, ggml_graph_n_nodes(gf) - 1);
             state.ids.resize(argmax_logit->ne[0]);
             ggml_backend_tensor_get(argmax_logit, state.ids.data(), 0, sizeof(int) * argmax_logit->ne[0]);
-            int last_id = 0;
-            for(int id: state.ids){
-                if (id != 0 && id != last_id) {
-                    printf("%s", ctx.vocab.id_to_token[id].c_str());
-                    last_id = id;
-                }
-            }
-            printf("\n");
+            // int last_id = 0;
+            // for(int id: state.ids){
+            //     if (id != 0 && id != last_id) {
+            //         printf("%s", ctx.vocab.id_to_token[id].c_str());
+            //         last_id = id;
+            //     }
+            // }
+            // printf("\n");
         }
 
     }
