@@ -207,7 +207,7 @@ int main(int argc, char** argv)
     cparams.use_gpu = params.use_gpu;
     cparams.flash_attn = params.flash_attn;
 
-    struct sense_voice_context *ctx = sense_voice_init_with_params_no_state(params.model.c_str(), cparams);
+    struct sense_voice_context *ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
     std::vector<float> pcmf32(n_sample_30s, 0.0f);
     std::vector<float> pcmf32_old;
     std::vector<float> pcmf32_new(n_sample_30s, 0.0f);
@@ -340,6 +340,7 @@ int main(int argc, char** argv)
 
                 wparams.greedy.best_of        = params.best_of;
                 wparams.beam_search.beam_size = params.beam_size;
+                wparams.in_stream = true;
 
                 pcmf32_double.resize(pcmf32.size());
                 std::transform(pcmf32.begin(), pcmf32.end(), pcmf32_double.begin(), [](double d){return static_cast<double>(d);});
@@ -366,38 +367,47 @@ int main(int argc, char** argv)
                     printf("### Transcription %d START | t0 = %d ms | t1 = %d ms\n", n_iter, (int) t0, (int) t1);
                     printf("\n");
                 }
-
-                const int n_segments = ctx->state->result_all.size();
-                for (int i = 0; i < n_segments; ++i) {
-                    const char * text = ctx->state->result_all[i].text.c_str();
-
-                    if (params.no_timestamps) {
-                        printf("%s", text);
-                        fflush(stdout);
-
-                        if (params.fname_out.length() > 0) {
-                            fout << text;
-                        }
-                    } else {
-                        const int64_t t0 = ctx->state->result_all[i].t0;
-                        const int64_t t1 = ctx->state->result_all[i].t1;
-
-                        std::string output = "[" + to_timestamp(t0, false) + " --> " + to_timestamp(t1, false) + "]  " + text;
-
-                        if (ctx->state->result_all[i].speaker_turn_next) {
-                            output += " [SPEAKER_TURN]";
-                        }
-
-                        output += "\n";
-
-                        printf("%s", output.c_str());
-                        fflush(stdout);
-
-                        if (params.fname_out.length() > 0) {
-                            fout << output;
-                        }
+                int last_id = 0;
+                for(int i = 4; i < ctx->state->ids.size(); i++)
+                {
+                    int id = ctx->state->ids[i];
+                    if (id != 0 && id != last_id) {
+                        printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
+                        // printf("%s", ctx->vocab.id_to_token[id].c_str());
+                        last_id = id;
                     }
                 }
+                // const int n_segments = ctx->state->result_all.size();
+                // for (int i = 0; i < n_segments; ++i) {
+                //     const char * text = ctx->state->result_all[i].text.c_str();
+
+                //     if (params.no_timestamps) {
+                //         printf("%s", text);
+                //         fflush(stdout);
+
+                //         if (params.fname_out.length() > 0) {
+                //             fout << text;
+                //         }
+                //     } else {
+                //         const int64_t t0 = ctx->state->result_all[i].t0;
+                //         const int64_t t1 = ctx->state->result_all[i].t1;
+
+                //         std::string output = "[" + to_timestamp(t0, false) + " --> " + to_timestamp(t1, false) + "]  " + text;
+
+                //         if (ctx->state->result_all[i].speaker_turn_next) {
+                //             output += " [SPEAKER_TURN]";
+                //         }
+
+                //         output += "\n";
+
+                //         printf("%s", output.c_str());
+                //         fflush(stdout);
+
+                //         if (params.fname_out.length() > 0) {
+                //             fout << output;
+                //         }
+                //     }
+                // }
 
                 if (params.fname_out.length() > 0) {
                     fout << std::endl;
