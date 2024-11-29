@@ -650,7 +650,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params(const 
 int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
                                           struct sense_voice_state * state,
                                           std::vector<double> &pcmf32,
-                                          bool debug,
+                                          bool debug, bool in_stream,
                                           int n_threads) {
     const int64_t t_start_us = ggml_time_us();
 
@@ -690,6 +690,7 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
 
 //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
+    if (in_stream) return 0;
     SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
                          state->t_feature_us / 1000.0);
     return 0;
@@ -708,7 +709,7 @@ int sense_voice_full_with_state(
 
     // compute features (fbank + cmvn)
     if (n_samples > 0) {
-        sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.n_threads);
+        sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.in_stream, params.n_threads);
     }
     // initialize the decoders
     int n_decoders = 1;
@@ -749,11 +750,21 @@ int sense_voice_full_with_state(
         return -6;
     }
 
-    SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                         __func__,
-                         (state->t_encode_us + state->t_decode_us) / 1e6,
-                         (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
-
+    if (!params.in_stream)
+    {
+        int last_id = 0;
+        for(int id: state->ids){
+            if (id != 0 && id != last_id) {
+                printf("%s", ctx->vocab.id_to_token[id].c_str());
+                last_id = id;
+            }
+        }
+        printf("\n");
+        SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                            __func__,
+                            (state->t_encode_us + state->t_decode_us) / 1e6,
+                            (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
+    }
     return 0;
 }
 
