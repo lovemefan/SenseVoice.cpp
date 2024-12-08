@@ -78,27 +78,6 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
     return gf;
 }
 
-static bool ggml_graph_compute_helper(
-        ggml_backend_sched_t   sched,
-        struct ggml_cgraph * graph,
-        int   n_threads) {
-
-    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
-        ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
-        ggml_backend_dev_t dev = ggml_backend_get_device(backend);
-        ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
-
-        auto * fn_set_n_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
-        if (fn_set_n_threads) {
-            fn_set_n_threads(backend, n_threads);
-        }
-    }
-
-
-    bool t = ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS;
-    ggml_backend_sched_reset(sched);
-    return t;
-}
 
 bool sense_voice_decode_internal(sense_voice_context &ctx,
                                  sense_voice_state &state,
