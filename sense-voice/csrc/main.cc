@@ -573,7 +573,7 @@ int main(int argc, char ** argv) {
                 n_pad = CHUNK_SIZE <= pcmf32.size() - i ? 0 : CHUNK_SIZE + i  - pcmf32.size();
 
                 for (int j = i + offset; j < i + CHUNK_SIZE; j++) {
-                    if (j > 0 and j < i + CONTEXT_SIZE - n_pad){
+                    if (j > 0 && j < i + CONTEXT_SIZE - n_pad){
                         chunk[j - i - offset] = pcmf32[j] / 32768;
                     } else{
                         //pad chunk when first chunk in left or data not enough in right
