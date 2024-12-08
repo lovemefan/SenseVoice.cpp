@@ -3,6 +3,7 @@
 //
 #include "common.h"
 #include "sense-voice.h"
+#include "silero-vad.h"
 #include <cmath>
 #include <cstdint>
 #include <thread>
@@ -10,6 +11,12 @@
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
+#define CHUNK_SIZE 512
+#define CONTEXT_SIZE 576
+#define SENSE_VOICE_VAD_CHUNK_PAD_SIZE 64
+#define VAD_LSTM_STATE_MEMORY_SIZE 2048
+#define VAD_LSTM_STATE_DIM 128
+#define INF 0xffffff
 
 
 // command-line parameters
@@ -33,6 +40,14 @@ struct sense_voice_params {
     float grammar_penalty = 100.0f;
     float temperature     = 0.0f;
     float temperature_inc = 0.2f;
+
+    // vad params
+    float threshold      = 0.5f;
+    float neg_threshold = 0.35f;
+    int32_t min_speech_duration_ms = 250;
+    int32_t max_speech_duration_ms = INF;
+    int32_t min_silence_duration_ms = 100;
+    int32_t speech_pad_ms = 30;
 
     bool debug_mode      = false;
     bool translate       = false;
@@ -153,6 +168,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "             --prompt PROMPT     [%-7s] initial prompt (max n_text_ctx/2 tokens)\n",       params.prompt.c_str());
     fprintf(stderr, "  -m FNAME,  --model FNAME       [%-7s] model path\n",                                     params.model.c_str());
     fprintf(stderr, "  -f FNAME,  --file FNAME        [%-7s] input WAV file path\n",                            "");
+    fprintf(stderr, "  -lpt N,    --min_speech_duration_ms   [%-7.2f] log probability threshold for decoder fail\n",   params.logprob_thold);
     fprintf(stderr, "  -oved D,   --ov-e-device DNAME [%-7s] the OpenVINO device used for encode inference\n",  params.openvino_encode_device.c_str());
     fprintf(stderr, "  -ls,       --log-score         [%-7s] log best decoder scores of tokens\n",              params.log_score?"true":"false");
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
@@ -200,6 +216,14 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-d"    || arg == "--duration")        { params.duration_ms     = std::stoi(argv[++i]); }
         else if (arg == "-mc"   || arg == "--max-context")     { params.max_context     = std::stoi(argv[++i]); }
         else if (arg == "-ml"   || arg == "--max-len")         { params.max_len         = std::stoi(argv[++i]); }
+        // vad parameters
+        else if (arg == "-vt"   || arg == "--threshold")       { params.threshold       = std::stof(argv[++i]); }
+        else if (arg == "-vnt"  || arg == "--neg_threshold")   { params.neg_threshold   = std::stof(argv[++i]); }
+        else if (arg == "--min-speech-duration-ms")     { params.min_speech_duration_ms = std::stoi(argv[++i]); }
+        else if (arg == "--max-speech-duration-ms")     { params.max_speech_duration_ms = std::stoi(argv[++i]); }
+        else if (arg == "--min_silence_duration_ms")   { params.min_silence_duration_ms = std::stoi(argv[++i]); }
+        else if (arg == "--speech_pad_ms")                     { params.speech_pad_ms   = std::stoi(argv[++i]); }
+
         else if (arg == "-bo"   || arg == "--best-of")         { params.best_of         = std::stoi(argv[++i]); }
         else if (arg == "-bs"   || arg == "--beam-size")       { params.beam_size       = std::stoi(argv[++i]); }
         else if (arg == "-ac"   || arg == "--audio-ctx")       { params.audio_ctx       = std::stoi(argv[++i]); }
@@ -375,13 +399,15 @@ static bool ggml_debug(struct ggml_tensor * t, bool ask, void * user_data) {
 void sense_voice_free(struct sense_voice_context * ctx) {
     if (ctx) {
         ggml_free(ctx->model.ctx);
-
+        ggml_free(ctx->vad_model.ctx);
         ggml_backend_buffer_free(ctx->model.buffer);
+        ggml_backend_buffer_free(ctx->vad_model.buffer);
 
         sense_voice_free_state(ctx->state);
 
         delete ctx->model.model->encoder;
         delete ctx->model.model;
+        delete ctx->vad_model.model;
         delete ctx;
     }
 }
@@ -490,13 +516,202 @@ int main(int argc, char ** argv) {
 
             wparams.no_timestamps    = params.no_timestamps;
 
-            if (sense_voice_full_parallel(ctx, wparams, pcmf32, pcmf32.size(), params.n_processors) != 0) {
-                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
-                return 10;
+
+            int n_pad = 0;
+            std::vector<float> chunk(CONTEXT_SIZE + SENSE_VOICE_VAD_CHUNK_PAD_SIZE, 0);
+
+            // run vad and asr
+
+            {
+                // init state
+                ctx->state->vad_ctx = ggml_init({VAD_LSTM_STATE_MEMORY_SIZE, nullptr, true});
+                ctx->state->vad_lstm_context = ggml_new_tensor_1d(ctx->state->vad_ctx, GGML_TYPE_F32, VAD_LSTM_STATE_DIM);
+                ctx->state->vad_lstm_hidden_state = ggml_new_tensor_1d(ctx->state->vad_ctx, GGML_TYPE_F32, VAD_LSTM_STATE_DIM);
+
+                ctx->state->vad_lstm_context_buffer = ggml_backend_alloc_buffer(ctx->state->backends[0],
+                                                                                ggml_nbytes(ctx->state->vad_lstm_context)
+                                                                                        + ggml_backend_get_alignment(ctx->state->backends[0]));
+                ctx->state->vad_lstm_hidden_state_buffer = ggml_backend_alloc_buffer(ctx->state->backends[0],
+                                                                                     ggml_nbytes(ctx->state->vad_lstm_hidden_state)
+                                                                                             + ggml_backend_get_alignment(ctx->state->backends[0]));
+                auto context_alloc = ggml_tallocr_new(ctx->state->vad_lstm_context_buffer);
+                ggml_tallocr_alloc(&context_alloc, ctx->state->vad_lstm_context);
+
+                auto state_alloc = ggml_tallocr_new(ctx->state->vad_lstm_hidden_state_buffer);
+                ggml_tallocr_alloc(&state_alloc, ctx->state->vad_lstm_hidden_state);
+
+                ggml_set_zero(ctx->state->vad_lstm_context);
+                ggml_set_zero(ctx->state->vad_lstm_hidden_state);
             }
 
+            int offset = offset = CHUNK_SIZE - CONTEXT_SIZE;
 
+            auto & sched = ctx->state->sched_vad.sched;
+            ggml_cgraph *gf = silero_vad_build_graph(*ctx, *ctx->state);
+
+//          ggml_backend_sched_set_eval_callback(sched,  ctx->params.cb_eval, &ctx->params.cb_eval_user_data);
+
+
+            if (!ggml_backend_sched_alloc_graph(sched, gf)) {
+                // should never happen as we pre-allocate the memory
+                return false;
+            }
+
+            // var for vad
+            bool  triggered = false;
+            int32_t temp_end = 0;
+            int32_t prev_end = 0, next_start = 0;
+            int32_t current_speech_start = 0, current_speech_end = 0;
+            int32_t min_speech_samples = sample_rate * params.min_speech_duration_ms / 1000;
+            int32_t speech_pad_samples = sample_rate * params.speech_pad_ms / 1000;
+            int32_t max_speech_samples = sample_rate * params.max_speech_duration_ms / 1000 - CHUNK_SIZE - 2 * speech_pad_samples;
+            int32_t min_silence_samples = sample_rate * params.min_silence_duration_ms / 1000;
+            int32_t min_silence_samples_at_max_speech = sample_rate * 98 / 1000;
+            std::vector<double> speech_segment;
+            for (int i = 0; i < pcmf32.size(); i += CHUNK_SIZE){
+
+                n_pad = CHUNK_SIZE <= pcmf32.size() - i ? 0 : CHUNK_SIZE + i  - pcmf32.size();
+
+                for (int j = i + offset; j < i + CHUNK_SIZE; j++) {
+                    if (j > 0 and j < i + CONTEXT_SIZE - n_pad){
+                        chunk[j - i - offset] = pcmf32[j] / 32768;
+                    } else{
+                        //pad chunk when first chunk in left or data not enough in right
+                        chunk[j - i - offset] = 0;
+                    }
+
+                }
+                // implements reflection pad
+                for (int j = CONTEXT_SIZE; j < chunk.size(); j++) {
+                    chunk[j] = chunk[2 * CONTEXT_SIZE - j - 2];
+                }
+
+                {
+                    // set the input
+                    {
+
+                        struct ggml_tensor *data = ggml_graph_get_tensor(gf, "audio_chunk");
+                        ggml_backend_tensor_set(data, chunk.data(), 0, ggml_nbytes(data));
+
+                        struct ggml_tensor *in_lstm_context = ggml_graph_get_tensor(gf, "in_lstm_context");
+                        struct ggml_tensor *in_lstm_hidden_state = ggml_graph_get_tensor(gf, "in_lstm_hidden_state");
+
+                        ggml_backend_tensor_copy(ctx->state->vad_lstm_context, in_lstm_context);
+                        ggml_backend_tensor_copy(ctx->state->vad_lstm_hidden_state, in_lstm_hidden_state);
+
+                    }
+
+                    if (!ggml_graph_compute_helper(sched, gf, params.n_processors)) {
+                        return false;
+                    }
+
+                    // save output state
+                    {
+                        struct ggml_tensor *lstm_context = ggml_graph_get_tensor(gf, "out_lstm_context");
+                        ggml_backend_tensor_copy(lstm_context, ctx->state->vad_lstm_context);
+                        struct ggml_tensor *lstm_hidden_state = ggml_graph_get_tensor(gf, "out_lstm_hidden_state");
+                        ggml_backend_tensor_copy(lstm_hidden_state, ctx->state->vad_lstm_hidden_state);
+
+                    }
+
+                }
+
+                {
+                    float speech_prob = ((float *)ggml_graph_get_tensor(gf, "logit")->data)[0];
+                    if (speech_prob >= params.threshold && temp_end) {
+                        temp_end = 0;
+                        if(next_start < prev_end) next_start = CHUNK_SIZE * i;
+                    }
+
+                    if (speech_prob >= params.threshold && ! triggered){
+                        triggered = true;
+                        current_speech_start = i;
+                        continue;
+                    }
+                    if (triggered && i - current_speech_start > max_speech_samples) {
+                        if (prev_end){
+                            current_speech_end = prev_end;
+
+                            // find an endpoint in speech
+                            speech_segment.clear();
+                            speech_segment.assign(pcmf32.begin() + current_speech_start, pcmf32.begin() + current_speech_end);
+                            if (sense_voice_full_parallel(ctx, wparams, speech_segment, speech_segment.size(), params.n_processors) != 0) {
+                                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                                return 10;
+                            }
+                            current_speech_end = current_speech_start = 0;
+                            if (next_start < prev_end) {
+                                triggered = false;
+                            }else{
+                                current_speech_start = next_start;
+                            }
+                            // find an endpoint in speech
+                            speech_segment.clear();
+                            speech_segment.assign(pcmf32.begin() + current_speech_start, pcmf32.begin() + current_speech_end);
+                            if (sense_voice_full_parallel(ctx, wparams, speech_segment, speech_segment.size(), params.n_processors) != 0) {
+                                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                                return 10;
+                            }
+                            current_speech_end = current_speech_start = 0;
+                            prev_end = next_start = temp_end = 0;
+
+                        } else {
+                            current_speech_end = i;
+                            prev_end = next_start = temp_end = 0;
+                            triggered = false;
+                            continue;
+
+                        }
+                    }
+
+                    if (speech_prob < params.neg_threshold && triggered){
+                        if (temp_end == 0){
+                            temp_end = i;
+                        }
+
+                        if (i - temp_end > min_silence_samples_at_max_speech) {
+                            prev_end = temp_end;
+                        }
+
+                        if (i - temp_end < min_silence_samples) {
+                            continue;
+                        }else{
+                            current_speech_end = temp_end;
+                            if (current_speech_end - current_speech_start > min_speech_samples) {
+                                // find an endpoint in speech
+                                speech_segment.clear();
+                                speech_segment.assign(pcmf32.begin() + current_speech_start, pcmf32.begin() + current_speech_end);
+                                printf("[%.2f-%.2f] ", current_speech_start / (sample_rate * 1.0), current_speech_end / (sample_rate * 1.0));
+                                if (sense_voice_full_parallel(ctx, wparams, speech_segment, speech_segment.size(), params.n_processors) != 0) {
+                                    fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                                    return 10;
+                                }
+                                current_speech_end = current_speech_start = 0;
+                            }
+                            prev_end = next_start = temp_end = 0;
+                            triggered = false;
+                            continue;
+                        }
+                    }
+
+                }
+
+            }
+            // last segment speech
+            if (current_speech_start != 0 && current_speech_end != 0 && pcmf32.size() - current_speech_start > min_speech_samples){
+                speech_segment.clear();
+                speech_segment.assign(pcmf32.begin() + current_speech_start, pcmf32.begin() + pcmf32.size());
+                printf("[%.2f-%.2f] ", current_speech_start / (sample_rate * 1.0), current_speech_end / (sample_rate * 1.0));
+                if (sense_voice_full_parallel(ctx, wparams, speech_segment, speech_segment.size(), params.n_processors) != 0) {
+                    fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                    return 10;
+                }
+            }
         }
+        SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                              __func__,
+                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
+                              (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
 
     }
     sense_voice_free(ctx);
