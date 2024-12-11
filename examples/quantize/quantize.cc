@@ -129,7 +129,15 @@ static bool sense_voice_model_quantize(const std::string & fname_inp, const std:
             "encoder.encoders0.0.self_attn.linear_q.weight",
             "encoder.encoders0.0.self_attn.linear_k.weight",
             "encoder.encoders0.0.self_attn.linear_v.weight",
-            "ctc.ctc_lo.weight"
+            "ctc.ctc_lo.weight",
+            // vad parameter
+            "_model.stft.forward_basis_buffer.weight",
+            "_model.encoder.*.reparam_conv.weight",
+            "_model.encoder.*.reparam_conv.bias",
+            "_model.decoder.rnn.weight_ih",
+            "_model.decoder.rnn.weight_hh",
+            "_model.decoder.decoder.2.weight",
+            "_model.decoder.decoder.2.bias"
     };
 
     if (!sense_voice_ggml_quantize0(ctx, gguf_ctx, fname_inp, fname_out, ftype, 4, { ".*" }, to_skip)) {
