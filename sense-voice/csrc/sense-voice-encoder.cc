@@ -71,28 +71,6 @@ struct sense_voice_context_params sense_voice_context_default_params() {
 }
 
 
-static bool ggml_graph_compute_helper(
-        ggml_backend_sched_t   sched,
-        struct ggml_cgraph * graph,
-        int   n_threads) {
-
-    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
-        ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
-        ggml_backend_dev_t dev = ggml_backend_get_device(backend);
-        ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
-
-        auto * fn_set_n_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
-        if (fn_set_n_threads) {
-            fn_set_n_threads(backend, n_threads);
-        }
-    }
-
-
-    bool t = ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS;
-    ggml_backend_sched_reset(sched);
-    return t;
-}
-
 static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams &hparams,
                                                sense_voice_context &sctx,
                                                ggml_context *ctx0,
@@ -198,12 +176,11 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                 struct ggml_tensor * a = layer.e_attn_fsmn_w;
                 struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
 
-                struct ggml_tensor * new_a = ggml_reshape_4d(ctx0, a, a->ne[0], 1, a->ne[1], a->ne[2] * a->ne[3]);;
-                struct ggml_tensor *im2col = ggml_im2col(ctx0, new_a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                struct ggml_tensor *im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
 
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
                 // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [n_state, length , 1]
-                struct ggml_tensor * result = ggml_mul_mat(ctx0, new_a, im2col);
+                struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
                 fsmn_memory = ggml_reshape_2d(ctx0, result, im2col->ne[1], im2col->ne[2]);
             }
             fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));

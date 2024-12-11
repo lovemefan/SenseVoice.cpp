@@ -11,6 +11,8 @@ set(SOURCE_FILES
         sense-voice-decoder.cc
         sense-voice.h
         sense-voice.cc
+        silero-vad.h
+        silero-vad.cc
 )
 
 add_library(sense-voice-core STATIC ${SOURCE_FILES})

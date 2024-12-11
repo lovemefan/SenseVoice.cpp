@@ -13,6 +13,7 @@
 
 #include "sense-voice-frontend.h"
 
+
 #ifdef __GNUC__
 #define SENSEVOICE_DEPRECATED(func, hint) func __attribute__((deprecated(hint)))
 #elif defined(_MSC_VER)
@@ -202,6 +203,18 @@ struct sense_voice {
 
 };
 
+struct silero_vad;
+
+struct silero_vad_model {
+    struct silero_vad *model;
+    // context
+    struct ggml_context *ctx;
+
+    // the model backend data is read-only and can be shared between processors
+    ggml_backend_buffer_t buffer = nullptr;
+};
+
+
 static const std::map<std::string, std::pair<int, std::string>> g_lang = {
         { "auto",  { 0,  "auto",         } },
         { "zh",  { 3,  "chinese",         } },
@@ -226,7 +239,7 @@ struct sense_voice_hparams {
     int n_decoder_attention_heads = 4;
     int n_decoder_layers = 14;
     int fsmn_kernel_size = 11;
-
+    int n_vad_encoder_layers = 4;
     int n_predictor_dim = 512;
     float predictor_tail_threshold = 0.45;
 
@@ -362,8 +375,20 @@ struct sense_voice_state {
 
     std::vector<ggml_backend_t> backends;
 
+    sense_voice_sched sched_vad;
+    sense_voice_sched sched_vad_sate;
     sense_voice_sched sched_encode;
     sense_voice_sched sched_decode;
+
+    // hidden state in vad lstm
+    ggml_context * vad_ctx = nullptr;
+    struct ggml_tensor *  vad_lstm_hidden_state;
+    struct ggml_tensor * vad_lstm_context;
+    ggml_backend_buffer_t vad_lstm_hidden_state_buffer = nullptr;
+    ggml_backend_buffer_t vad_lstm_context_buffer = nullptr;
+
+    ggml_cgraph *sense_voice_encoder_graph;
+    ggml_cgraph *sense_voice_decoder_graph;
 
     // result of the encoder
     struct ggml_tensor *encoder_out = nullptr;
@@ -443,6 +468,7 @@ struct sense_voice_full_params {
 struct sense_voice_model {
     std::string model_type;
     sense_voice_hparams hparams;
+    silero_vad *vad_model;
     sense_voice *model;
     // context
     struct ggml_context *ctx;
@@ -473,6 +499,7 @@ struct sense_voice_context {
     ggml_type itype =
             ggml_type::GGML_TYPE_F16;  // intermediate type (FP32 or FP16)
 
+    silero_vad_model vad_model;
     sense_voice_model model;
     sense_voice_vocab vocab;
 
@@ -484,5 +511,7 @@ struct sense_voice_context {
 };
 
 struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_decoding_strategy strategy);
+bool ggml_graph_compute_helper(ggml_backend_sched_t sched, struct ggml_cgraph * graph, int n_threads);
+
 
 #endif//SENSEVOICE_CPP_COMMON_H
