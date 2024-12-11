@@ -2,13 +2,14 @@
 // Created by lovemefan on 2024/7/19.
 //
 #include "sense-voice.h"
-#include "sense-voice-encoder.h"
-#include "sense-voice-decoder.h"
-#include "sense-voice-cmvn.h"
 #include "common.h"
+#include "sense-voice-cmvn.h"
+#include "sense-voice-decoder.h"
+#include "sense-voice-encoder.h"
+#include "silero-vad.h"
 #include <cassert>
-#include <thread>
 #include <functional>
+#include <thread>
 
 #define SENSE_VOICE_MAX_NODES 8192
 #define SENSE_VOICE_MAX_DECODERS 8
@@ -108,6 +109,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
     sctx.t_start_ms = t_start_ms;
 
+    auto &vad_model = sctx.vad_model;
     auto &sense_voice = sctx.model;
     auto &vocab = sctx.vocab;
     auto &hparams = sense_voice.hparams;
@@ -308,12 +310,29 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
     {
         // build model
+        vad_model.model = new struct silero_vad;
+        vad_model.model->encoders_layer = std::vector<silero_vad_encoder_layer>(hparams.n_vad_encoder_layers);
+
+        sense_voice.vad_model = vad_model.model;
         sense_voice.model = new struct sense_voice;
         sense_voice.model->encoder = new struct sense_voice_encoder;
         sense_voice.model->encoder->encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_encoder_layers - 1);
         sense_voice.model->encoder->tp_encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_tp_encoder_layers);
 
-
+        // load vad model
+        {
+            vad_model.model->stft.forward_basis_buffer = sense_voice.tensors["_model.stft.forward_basis_buffer.weight"];
+            for (int i = 0; i < hparams.n_vad_encoder_layers; i++) {
+                vad_model.model->encoders_layer[i].reparam_conv_w = sense_voice.tensors["_model.encoder." + std::to_string(i) + ".reparam_conv.weight"];
+                vad_model.model->encoders_layer[i].reparam_conv_b = sense_voice.tensors["_model.encoder." + std::to_string(i) + ".reparam_conv.bias"];
+            }
+            vad_model.model->decoder.lstm_weight_ih = sense_voice.tensors["_model.decoder.rnn.weight_ih"];
+            vad_model.model->decoder.lstm_weight_hh = sense_voice.tensors["_model.decoder.rnn.weight_hh"];
+            vad_model.model->decoder.lstm_bias_ih = sense_voice.tensors["_model.decoder.rnn.bias_ih"];
+            vad_model.model->decoder.lstm_bias_hh = sense_voice.tensors["_model.decoder.rnn.bias_hh"];
+            vad_model.model->decoder.decoder_conv_w = sense_voice.tensors["_model.decoder.decoder.2.weight"];
+            vad_model.model->decoder.decoder_conv_b = sense_voice.tensors["_model.decoder.decoder.2.bias"];
+        }
 
         // load encoder weights, multi layers of EncoderLayerSANM
         {
@@ -496,7 +515,10 @@ void sense_voice_free_state(struct sense_voice_state * state) {
 
             {
                 ggml_free(state->feature.ctx);
+                ggml_free(state->vad_ctx);
                 ggml_backend_buffer_free(state->feature.buffer);
+                ggml_backend_buffer_free(state->vad_lstm_hidden_state_buffer);
+                ggml_backend_buffer_free(state->vad_lstm_context_buffer);
                 state->feature.n_len_org = 0;
                 state->feature.ctx = nullptr;
                 state->feature.tensor = nullptr;
@@ -578,6 +600,21 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
 
     state->logits_id.reserve(ctx->model.hparams.n_vocab);
 
+    // vad allocator
+    {
+        bool ok = sense_voice_sched_graph_init(
+                state->sched_vad, state->backends,
+                [&]() { return silero_vad_build_graph(*ctx, *state); });
+
+        if (!ok) {
+            SENSE_VOICE_LOG_ERROR("%s: failed to init vad model allocator\n", __func__);
+            sense_voice_free_state(state);
+            return nullptr;
+        }
+
+        SENSE_VOICE_LOG_INFO("%s: compute buffer (encoder)   = %7.2f MB\n", __func__,
+                             sense_voice_sched_size(state->sched_vad) / 1e6);
+    }
 
     // encoder allocator
     {
@@ -690,7 +727,7 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
 
 //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
-    SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
+    SENSE_VOICE_LOG_DEBUG("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
                          state->t_feature_us / 1000.0);
     return 0;
 }
@@ -749,7 +786,7 @@ int sense_voice_full_with_state(
         return -6;
     }
 
-    SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+    SENSE_VOICE_LOG_DEBUG("\n%s: decoder audio use %f s, rtf is %f. \n\n",
                          __func__,
                          (state->t_encode_us + state->t_decode_us) / 1e6,
                          (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));

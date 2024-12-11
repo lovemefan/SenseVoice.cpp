@@ -51,6 +51,7 @@ class Model(ABC):
         )
 
         self.model_checkpoint = "model.pt"
+        self.vad_model_checkpoint = 'silero_vad.pt'
         self.hparams = Model.load_hparams(self.dir_model)
         self.gguf_writer = gguf.GGUFWriter(
             fname_out,
@@ -105,8 +106,23 @@ class Model(ABC):
         raise NotImplementedError
 
     def get_tensors(self) -> Iterator[tuple[str, Tensor]]:
+
         print(f"gguf: loading model part '{self.model_checkpoint}'")
+        print(f"gguf: loading vad model part '{self.vad_model_checkpoint}'")
         ctx: ContextManager[Any]
+
+        ctx = contextlib.nullcontext(
+            torch.load(
+                str(self.dir_model / self.vad_model_checkpoint),
+                map_location="cpu",
+                mmap=True,
+                weights_only=True,
+            )
+        )
+
+        with ctx as model_part:
+            for name, data in model_part.items():
+                yield name, data
 
         ctx = contextlib.nullcontext(
             torch.load(
@@ -254,7 +270,7 @@ class SenseVoiceSmall(Model):
         if data_torch.dtype not in (torch.float16, torch.float32):
             data_torch = data_torch.to(torch.float32)
 
-        _data = data_torch.squeeze().numpy()
+        _data = data_torch.numpy()
         # use max to avoid n_dim of single tensor become 0
         if len(_data.shape) != 0:
             data = _data
@@ -281,6 +297,15 @@ class SenseVoiceSmall(Model):
         ):
             data = data.astype(np.float16)
 
+        if name in [
+            '_model.stft.forward_basis_buffer.weight',
+            '_model.encoder.0.reparam_conv.weight',
+            '_model.encoder.1.reparam_conv.weight',
+            '_model.encoder.2.reparam_conv.weight',
+            '_model.encoder.3.reparam_conv.weight',
+            '_model.decoder.decoder.2.weight'
+        ]:
+            data = data.astype(np.float16)
 
         print(
             f"|{name}| n_dims = {n_dims}| {old_dtype} | {data.dtype} | {data.size}|"
