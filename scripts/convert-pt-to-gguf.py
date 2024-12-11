@@ -297,7 +297,7 @@ class SenseVoiceSmall(Model):
         ):
             data = data.astype(np.float16)
 
-        if self.ftype == 0 and name in [
+        if name in [
             '_model.stft.forward_basis_buffer.weight',
             '_model.encoder.0.reparam_conv.weight',
             '_model.encoder.1.reparam_conv.weight',
