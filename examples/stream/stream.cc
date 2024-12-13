@@ -372,8 +372,8 @@ int main(int argc, char** argv)
                 {
                     int id = ctx->state->ids[i];
                     if (id != 0 && id != last_id) {
-                        printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
-                        // printf("%s", ctx->vocab.id_to_token[id].c_str());
+                        // printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
+                        printf("%s", ctx->vocab.id_to_token[id].c_str());
                         last_id = id;
                     }
                 }
