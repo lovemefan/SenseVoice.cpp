@@ -26,6 +26,9 @@ struct sense_voice_params {
     int32_t best_of       = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY).greedy.best_of;
     int32_t beam_size     = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_BEAM_SEARCH).beam_search.beam_size;
     int32_t audio_ctx     = 0;
+    int32_t chunk_size = 100;                        // ms
+    int32_t max_nomute_chunks = 15000 / chunk_size;  // chunks
+    int32_t min_mute_chunks = 500 / chunk_size;      // chunks
 
     float word_thold      =  0.01f;
     float entropy_thold   =  2.40f;
@@ -33,6 +36,8 @@ struct sense_voice_params {
     float grammar_penalty = 100.0f;
     float temperature     = 0.0f;
     float temperature_inc = 0.2f;
+    float vad_thold    = 0.6f;
+    float freq_thold   = 100.0f;
 
     bool debug_mode      = false;
     bool translate       = false;
@@ -240,7 +245,12 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-ng"   || arg == "--no-gpu")          { params.use_gpu         = false; }
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
-        else if (arg == "-itn"   || arg == "--use-itn")        { params.use_itn         = true; }
+        else if (arg == "-itn"  || arg == "--use-itn")         { params.use_itn         = true; }
+        else if (arg == "-mmc"  || arg == "--min-mute-chunks") { params.min_mute_chunks       = std::stoi(argv[++i]); }
+        else if (arg == "-mnc"  || arg == "--max-nomute-chunks"){ params.max_nomute_chunks     = std::stoi(argv[++i]); }
+        else if (                  arg == "--chunk_size")      { params.chunk_size       = std::stoi(argv[++i]); }
+        else if (arg == "-vth"  || arg == "--vad-thold")     { params.vad_thold     = std::stof(argv[++i]); }
+        else if (arg == "-fth"  || arg == "--freq-thold")    { params.freq_thold    = std::stof(argv[++i]); }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -450,7 +460,6 @@ int main(int argc, char ** argv) {
 
         std::vector<double> pcmf32;               // mono-channel F32 PCM
 
-
         int sample_rate;
         if (!::load_wav_file(fname_inp.c_str(), &sample_rate, pcmf32)) {
             fprintf(stderr, "error: failed to read WAV file '%s'\n", fname_inp.c_str());
@@ -473,12 +482,9 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "\n");
         }
 
-        sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
-        // run inference
         {
-
+            sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
             wparams.strategy = (params.beam_size > 1 ) ? SENSE_VOICE_SAMPLING_BEAM_SEARCH : SENSE_VOICE_SAMPLING_GREEDY;
-
             wparams.print_progress   = params.print_progress;
             wparams.print_timestamps = !params.no_timestamps;
             wparams.language         = params.language.c_str();
@@ -486,20 +492,75 @@ int main(int argc, char ** argv) {
             wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
             wparams.offset_ms        = params.offset_t_ms;
             wparams.duration_ms      = params.duration_ms;
-
             wparams.debug_mode       = params.debug_mode;
-
             wparams.greedy.best_of        = params.best_of;
             wparams.beam_search.beam_size = params.beam_size;
-
             wparams.no_timestamps    = params.no_timestamps;
 
-            if (sense_voice_full_parallel(ctx, wparams, pcmf32, pcmf32.size(), params.n_processors) != 0) {
-                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
-                return 10;
+            std::vector<double> pcmf32_tmp;           // 记录需要解析的段落
+            int32_t L_nomute = -1, R_nomute = -1, L_mute = -1, R_mute = -1;  // [L_nomute, R_nomute)永远为需要解析的段落，[L_mute, R_mute)永远为最近一段静音空挡
+            
+            const int n_sample_step = params.chunk_size * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
+            const int keep_nomute_step = params.chunk_size * params.min_mute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
+            const int max_nomute_step = params.chunk_size * params.max_nomute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
+            std::vector<double> pcmf32_chunk;         // 作为临时缓冲区
+            pcmf32_chunk.resize(n_sample_step);
+            // const bool use_vad = (n_samples_step <= 0);
+            for(int i = 0; i < pcmf32.size(); i += n_sample_step)
+            {
+                int R_this_chunk = std::min(i + n_sample_step, int(pcmf32.size()));
+                std::copy(pcmf32.begin() + i, pcmf32.begin() + R_this_chunk, pcmf32_chunk.begin());
+                bool isnomute = vad_simple(pcmf32_chunk, SENSE_VOICE_SAMPLE_RATE, params.chunk_size >> 1, params.vad_thold, params.freq_thold, true);
+
+                if(isnomute)
+                {
+                    if(L_nomute < 0)
+                        L_nomute = i;
+                    if(L_mute >= 0)
+                        R_mute = R_this_chunk;
+                }
+                else
+                {
+                    if(L_nomute >= 0)
+                        L_mute = i, R_mute = -1;
+                    if(L_mute > 0 && R_this_chunk - L_mute >= keep_nomute_step)
+                        R_nomute = i, L_mute = R_mute = -1;
+                }
+                if(L_nomute >= 0 && R_this_chunk - L_nomute > max_nomute_step)
+                {
+                    if(L_mute >= 0)
+                        R_nomute = L_mute;
+                    else
+                        R_nomute = R_this_chunk;
+                    L_mute = R_mute = -1;
+                }
+                if(R_nomute >= 0)  // 需要识别
+                {
+                    printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
+                    pcmf32_tmp.resize(R_nomute - L_nomute);
+                    std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
+                    if (sense_voice_full_parallel(ctx, wparams, pcmf32_tmp, pcmf32_tmp.size(), params.n_processors) != 0) {
+                        fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                        return 10;
+                    }
+                    R_nomute = L_mute = R_mute = -1;
+                    L_nomute = isnomute ? i : -1;
+                    break;
+                }
             }
-
-
+            // 最后一段
+            // if(L_nomute >= 0)
+            // {
+            //     R_nomute = pcmf32.size();
+            //     printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
+            //     pcmf32_tmp.resize(R_nomute - L_nomute);
+            //     std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
+            //     if (sense_voice_full_parallel(ctx, wparams, pcmf32_tmp, pcmf32_tmp.size(), params.n_processors) != 0) {
+            //         fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+            //         return 10;
+            //     } 
+            //     L_nomute = R_nomute = L_mute = R_mute = -1;
+            // }
         }
 
     }
