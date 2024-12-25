@@ -508,9 +508,8 @@ int main(int argc, char ** argv) {
             for(int i = 0; i < pcmf32.size(); i += n_sample_step)
             {
                 int R_this_chunk = std::min(i + n_sample_step, int(pcmf32.size()));
-                std::copy(pcmf32.begin() + i, pcmf32.begin() + R_this_chunk, pcmf32_chunk.begin());
-                bool isnomute = vad_energy_zcr(pcmf32_chunk, SENSE_VOICE_SAMPLE_RATE);
-                // printf("1111: %d %d %d %d %d %d %d\n", isnomute, L_nomute, L_mute, R_mute, R_this_chunk, max_nomute_step, keep_nomute_step);
+                bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, R_this_chunk - i, SENSE_VOICE_SAMPLE_RATE);
+
                 if (L_nomute >= 0 && R_this_chunk - L_nomute >= max_nomute_step)
                 {
                     if(L_mute >= 0)
@@ -539,7 +538,7 @@ int main(int argc, char ** argv) {
                 {
                     if (R_mute != i) L_mute = i;
                     R_mute = R_this_chunk;
-                    // printf("Mute: %d %d\n", L_mute, R_mute);
+                    // printf("Mute || L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
                     if (L_mute >= L_nomute && L_nomute >= 0 && R_this_chunk - L_mute >= keep_nomute_step)
                     {
                         R_nomute = L_mute;

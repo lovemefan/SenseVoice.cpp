@@ -130,14 +130,14 @@ bool vad_simple(std::vector<float> & pcmf32, int sample_rate, int last_ms, float
 bool vad_simple(std::vector<double> & pcmf32, int sample_rate, int last_ms, float vad_thold, float freq_thold, bool verbose);
 
 template<typename T>
-bool vad_energy_zcr(std::vector<T> & pcmf32, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
- {
+bool vad_energy_zcr(typename std::vector<T>::iterator pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
+{
     const int frame_size = 256; // 16ms at 16kHz
     const int frame_shift = 128; // 50% overlap
     
-    if (pcmf32.size() < frame_size) return false;
+    if (siz < frame_size) return false;
 
-    int num_frames = (pcmf32.size() - frame_size) / frame_shift + 1;
+    int num_frames = (siz - frame_size) / frame_shift + 1;
     std::vector<T> energies(num_frames);
     std::vector<T> zcrs(num_frames);
 
