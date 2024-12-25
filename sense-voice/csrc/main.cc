@@ -16,7 +16,6 @@
 #define SENSE_VOICE_VAD_CHUNK_PAD_SIZE 64
 #define VAD_LSTM_STATE_MEMORY_SIZE 2048
 #define VAD_LSTM_STATE_DIM 128
-#define INF 0xffffff
 
 
 // command-line parameters
@@ -45,7 +44,7 @@ struct sense_voice_params {
     float threshold      = 0.5f;
     float neg_threshold = 0.35f;
     int32_t min_speech_duration_ms = 250;
-    int32_t max_speech_duration_ms = INF;
+    int32_t max_speech_duration_ms = 15000;
     int32_t min_silence_duration_ms = 100;
     int32_t speech_pad_ms = 30;
 
@@ -77,9 +76,7 @@ struct sense_voice_params {
     std::string prompt;
     std::string model     = "models/ggml-base.en.bin";
 
-
     std::string openvino_encode_device = "CPU";
-
 
     std::vector<std::string> fname_inp = {};
     std::vector<std::string> fname_out = {};
@@ -547,15 +544,8 @@ int main(int argc, char ** argv) {
             int offset = offset = CHUNK_SIZE - CONTEXT_SIZE;
 
             auto & sched = ctx->state->sched_vad.sched;
-            ggml_cgraph *gf = silero_vad_build_graph(*ctx, *ctx->state);
 
 //          ggml_backend_sched_set_eval_callback(sched,  ctx->params.cb_eval, &ctx->params.cb_eval_user_data);
-
-
-            if (!ggml_backend_sched_alloc_graph(sched, gf)) {
-                // should never happen as we pre-allocate the memory
-                return false;
-            }
 
             // var for vad
             bool  triggered = false;
@@ -586,38 +576,10 @@ int main(int argc, char ** argv) {
                     chunk[j] = chunk[2 * CONTEXT_SIZE - j - 2];
                 }
 
-                {
-                    // set the input
-                    {
-
-                        struct ggml_tensor *data = ggml_graph_get_tensor(gf, "audio_chunk");
-                        ggml_backend_tensor_set(data, chunk.data(), 0, ggml_nbytes(data));
-
-                        struct ggml_tensor *in_lstm_context = ggml_graph_get_tensor(gf, "in_lstm_context");
-                        struct ggml_tensor *in_lstm_hidden_state = ggml_graph_get_tensor(gf, "in_lstm_hidden_state");
-
-                        ggml_backend_tensor_copy(ctx->state->vad_lstm_context, in_lstm_context);
-                        ggml_backend_tensor_copy(ctx->state->vad_lstm_hidden_state, in_lstm_hidden_state);
-
-                    }
-
-                    if (!ggml_graph_compute_helper(sched, gf, params.n_processors)) {
-                        return false;
-                    }
-
-                    // save output state
-                    {
-                        struct ggml_tensor *lstm_context = ggml_graph_get_tensor(gf, "out_lstm_context");
-                        ggml_backend_tensor_copy(lstm_context, ctx->state->vad_lstm_context);
-                        struct ggml_tensor *lstm_hidden_state = ggml_graph_get_tensor(gf, "out_lstm_hidden_state");
-                        ggml_backend_tensor_copy(lstm_hidden_state, ctx->state->vad_lstm_hidden_state);
-
-                    }
-
-                }
 
                 {
-                    float speech_prob = ((float *)ggml_graph_get_tensor(gf, "logit")->data)[0];
+                    float speech_prob = 0;
+                    silero_vad_encode_internal(*ctx, *ctx->state, chunk, params.n_threads, speech_prob);
                     if (speech_prob >= params.threshold && temp_end) {
                         temp_end = 0;
                         if(next_start < prev_end) next_start = CHUNK_SIZE * i;

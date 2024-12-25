@@ -93,7 +93,7 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
     {
         // layer norm
         // cur = ln_0_w*cur + ln_0_b
-#ifdef GGML_USE_CUDA
+#ifdef GGML_CUDA
         int32_t dim_size = cur->ne[0];
         if (sctx.params.use_gpu && dim_size % WARP_SIZE) {
             int32_t pad_size = WARP_SIZE - (dim_size % WARP_SIZE);
