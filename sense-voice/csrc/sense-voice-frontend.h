@@ -125,3 +125,6 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
 
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<double> &data);
+
+bool vad_simple(std::vector<float> & pcmf32, int sample_rate, int last_ms, float vad_thold, float freq_thold, bool verbose);
+bool vad_simple(std::vector<double> & pcmf32, int sample_rate, int last_ms, float vad_thold, float freq_thold, bool verbose);
