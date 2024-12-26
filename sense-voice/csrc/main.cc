@@ -36,8 +36,6 @@ struct sense_voice_params {
     float grammar_penalty = 100.0f;
     float temperature     = 0.0f;
     float temperature_inc = 0.2f;
-    float vad_thold    = 0.6f;
-    float freq_thold   = 100.0f;
 
     bool debug_mode      = false;
     bool translate       = false;
@@ -164,6 +162,9 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n",                                params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
+    fprintf(stderr, "             --chunk_size        [%-7d] vad chunk size(ms)\n",                                params.chunk_size);
+    fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7d] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
+    fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7d] when the first non-silent chunk is too far away\n",   params.max_nomute_chunks);
     fprintf(stderr, "\n");
 }
 
@@ -249,8 +250,6 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-mmc"  || arg == "--min-mute-chunks") { params.min_mute_chunks       = std::stoi(argv[++i]); }
         else if (arg == "-mnc"  || arg == "--max-nomute-chunks"){ params.max_nomute_chunks     = std::stoi(argv[++i]); }
         else if (                  arg == "--chunk_size")      { params.chunk_size       = std::stoi(argv[++i]); }
-        else if (arg == "-vth"  || arg == "--vad-thold")     { params.vad_thold     = std::stof(argv[++i]); }
-        else if (arg == "-fth"  || arg == "--freq-thold")    { params.freq_thold    = std::stof(argv[++i]); }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
