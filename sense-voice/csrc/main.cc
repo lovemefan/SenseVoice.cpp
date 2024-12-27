@@ -247,9 +247,9 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
         else if (arg == "-itn"  || arg == "--use-itn")         { params.use_itn         = true; }
-        else if (arg == "-mmc"  || arg == "--min-mute-chunks") { params.min_mute_chunks       = std::stoi(argv[++i]); }
-        else if (arg == "-mnc"  || arg == "--max-nomute-chunks"){ params.max_nomute_chunks     = std::stoi(argv[++i]); }
-        else if (                  arg == "--chunk_size")      { params.chunk_size       = std::stoi(argv[++i]); }
+        else if (arg == "-mmc"  || arg == "--min-mute-chunks")   { params.min_mute_chunks       = std::stoi(argv[++i]); }
+        else if (arg == "-mnc"  || arg == "--max-nomute-chunks") { params.max_nomute_chunks     = std::stoi(argv[++i]); }
+        else if (                  arg == "--chunk_size")        { params.chunk_size            = std::stoi(argv[++i]); }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);

@@ -147,7 +147,7 @@ void audio_async::callback(uint8_t * stream, int len) {
         stream += (len - (n_samples * sizeof(float)));
     }
 
-    //fprintf(stderr, "%s: %zu samples, pos %zu, len %zu\n", __func__, n_samples, m_audio_pos, m_audio_len);
+    // fprintf(stderr, "%s || samples: %zu, pos: %zu, audiolen: %zu, len: %d\n", __func__, n_samples, m_audio_pos, m_audio_len, len);
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -159,13 +159,12 @@ void audio_async::callback(uint8_t * stream, int len) {
             memcpy(&m_audio[0], stream + n0 * sizeof(float), (n_samples - n0) * sizeof(float));
 
             m_audio_pos = (m_audio_pos + n_samples) % m_audio.size();
-            m_audio_len = m_audio.size();
         } else {
             memcpy(&m_audio[m_audio_pos], stream, n_samples * sizeof(float));
 
             m_audio_pos = (m_audio_pos + n_samples) % m_audio.size();
-            m_audio_len = std::min(m_audio_len + n_samples, m_audio.size());
         }
+        m_audio_len = std::min(m_audio_len + n_samples, m_audio.size());
     }
 }
 
@@ -181,34 +180,21 @@ void audio_async::get(int ms, std::vector<float> & result) {
     }
 
     result.clear();
-
+    result.resize(m_audio_len);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-
-        if (ms <= 0) {
-            ms = m_len_ms;
-        }
-
-        size_t n_samples = (m_sample_rate * ms) / 1000;
-        if (n_samples > m_audio_len) {
-            n_samples = m_audio_len;
-        }
-
-        result.resize(n_samples);
-
-        int s0 = m_audio_pos - n_samples;
+        int s0 = m_audio_pos - m_audio_len;
+        // fprintf(stderr, "%s || pos: %zu, audiolen: %zu, s0: %d\n", __func__, m_audio_pos, m_audio_len, s0);
         if (s0 < 0) {
             s0 += m_audio.size();
-        }
-
-        if (s0 + n_samples > m_audio.size()) {
             const size_t n0 = m_audio.size() - s0;
-
+            // fprintf(stderr, "%s || s0: %d, n0: %zu\n", __func__, s0, n0);
             memcpy(result.data(), &m_audio[s0], n0 * sizeof(float));
-            memcpy(&result[n0], &m_audio[0], (n_samples - n0) * sizeof(float));
+            memcpy(&result[n0], &m_audio[0], (m_audio_len - n0) * sizeof(float));
         } else {
-            memcpy(result.data(), &m_audio[s0], n_samples * sizeof(float));
+            memcpy(result.data(), &m_audio[s0], m_audio_len * sizeof(float));
         }
+        m_audio_len = 0;
     }
 }
 
