@@ -126,8 +126,6 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<double> &data);
 
-bool vad_simple(std::vector<float> & pcmf32, int sample_rate, int last_ms, float vad_thold, float freq_thold, bool verbose);
-bool vad_simple(std::vector<double> & pcmf32, int sample_rate, int last_ms, float vad_thold, float freq_thold, bool verbose);
 
 template<typename T>
 bool vad_energy_zcr(typename std::vector<T>::iterator pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
