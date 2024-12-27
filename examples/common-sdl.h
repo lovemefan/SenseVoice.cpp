@@ -42,7 +42,7 @@ private:
 
     std::vector<float> m_audio;
     size_t             m_audio_pos = 0;
-    size_t             m_audio_len = 0;
+    size_t             m_audio_len = 0;  // 调整定义：改为音频的有效长度
 };
 
 // Return false if need to quit
