@@ -235,7 +235,7 @@ int main(int argc, char** argv)
             {
                 int R_this_chunk = i + n_sample_step;
                 bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, n_sample_step, SENSE_VOICE_SAMPLE_RATE);
-                fprintf(stderr, "Mute || isnomute = %d, L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", isnomute, L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
+                // fprintf(stderr, "Mute || isnomute = %d, L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", isnomute, L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
                 if (L_nomute >= 0 && R_this_chunk - L_nomute >= max_nomute_step)
                 {
                     int R_nomute = L_mute >= 0 ? L_mute : R_this_chunk;
