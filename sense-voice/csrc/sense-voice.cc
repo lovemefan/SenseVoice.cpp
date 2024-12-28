@@ -690,8 +690,7 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
 
 //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
-    if (in_stream) return 0;
-    SENSE_VOICE_LOG_INFO("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
+    SENSE_VOICE_LOG_DEBUG("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
                          state->t_feature_us / 1000.0);
     return 0;
 }
@@ -749,14 +748,10 @@ int sense_voice_full_with_state(
         SENSE_VOICE_LOG_ERROR("%s: failed to decode\n", __func__);
         return -6;
     }
-
-    if (!params.in_stream)
-    {
-        SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                            __func__,
-                            (state->t_encode_us + state->t_decode_us) / 1e6,
-                            (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
-    }
+    SENSE_VOICE_LOG_DEBUG("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                        __func__,
+                        (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
+                        (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
     return 0;
 }
 

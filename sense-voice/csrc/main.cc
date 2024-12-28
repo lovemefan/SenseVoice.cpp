@@ -568,10 +568,6 @@ int main(int argc, char ** argv) {
                 L_nomute = L_mute = R_mute = -1;
             }
         }
-        SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                            __func__,
-                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
-                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
     }
     sense_voice_free(ctx);
     return 0;
