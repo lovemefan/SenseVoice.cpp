@@ -224,7 +224,7 @@ int main(int argc, char** argv)
                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                 return 10;
             }
-            sense_voice_print_output(ctx, true, params.use_itn);
+            sense_voice_print_output(ctx, true, params.use_itn, true);
             // 时间长度太长了直接换行重新开始
             if (R_new_chunk >= max_nomute_step)
             {
@@ -256,7 +256,6 @@ int main(int argc, char** argv)
                     }
                     sense_voice_print_output(ctx, true, params.use_itn);
 
-                    printf("\n");
                     if (!isnomute) L_nomute = -1;
                     else if (R_mute >= 0) L_nomute = R_mute;
                     else L_nomute = i;
@@ -283,7 +282,6 @@ int main(int argc, char** argv)
                         }
                         sense_voice_print_output(ctx, true, params.use_itn);
 
-                        printf("\n");
                         if (!isnomute) L_nomute = -1;
                         else if (R_mute >= 0) L_nomute = R_mute;
                         else L_nomute = i;
