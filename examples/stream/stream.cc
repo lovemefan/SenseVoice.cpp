@@ -9,21 +9,6 @@
 #include "common-sdl.h"
 #include "common.h"
 
-static std::string to_timestamp(int64_t t, bool comma = false) {
-    int64_t msec = t * 10;
-    int64_t hr = msec / (1000 * 60 * 60);
-    msec = msec - hr * (1000 * 60 * 60);
-    int64_t min = msec / (1000 * 60);
-    msec = msec - min * (1000 * 60);
-    int64_t sec = msec / 1000;
-    msec = msec - sec * 1000;
-
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%02d:%02d:%02d%s%03d", (int) hr, (int) min, (int) sec, comma ? "," : ".", (int) msec);
-
-    return std::string(buf);
-}
-
 struct sense_voice_stream_params {
     int32_t n_threads         = std::min(4, (int32_t) std::thread::hardware_concurrency());
     int32_t n_processors      = 1;
@@ -240,8 +225,8 @@ int main(int argc, char** argv)
             for(int i = L_new_chunk; i < R_new_chunk; i += n_sample_step)
             {
                 int R_this_chunk = i + n_sample_step;
-                bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, n_sample_step, SENSE_VOICE_SAMPLE_RATE);
-                // fprintf(stderr, "Mute || isnomute = %d, L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", isnomute, L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
+                bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, n_sample_step, SENSE_VOICE_SAMPLE_RATE, 1e-5, 0.2);
+                // fprintf(stderr, "Mute || isnomute = %d, L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, idenitified = %d\n", isnomute, L_mute, R_mute, L_nomute, R_this_chunk, idenitified_floats);
                 if (L_nomute >= 0 && R_this_chunk - L_nomute >= max_nomute_step)
                 {
                     int R_nomute = L_mute >= 0 ? L_mute : R_this_chunk;
