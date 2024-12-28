@@ -40,6 +40,7 @@ struct sense_voice_stream_params {
     bool flash_attn    = false;
     bool debug_mode    = false;
     bool use_vad       = false;
+    bool use_itn       = false;
 
     std::string language  = "auto";
     std::string model     = "models/ggml-base.en.bin";
@@ -64,7 +65,8 @@ void sense_voice_stream_usage(int /*argc*/, char ** argv, const sense_voice_stre
     fprintf(stderr, "  -m FNAME, --model FNAME       [%-7s] [SenseVoice] model path\n",                                  params.model.c_str());
     fprintf(stderr, "  -f FNAME, --file FNAME        [%-7s] [IO] text output file name\n",                               params.fname_out.c_str());
     fprintf(stderr, "  -ng,      --no-gpu            [%-7s] [SenseVoice] disable GPU inference\n",                       params.use_gpu ? "false" : "true");
-    fprintf(stderr, "  -fa,      --flash-attn        [%-7s] [SenseVoice]flash attention during inference\n",             params.flash_attn ? "true" : "false");
+    fprintf(stderr, "  -fa,      --flash-attn        [%-7s] [SenseVoice] flash attention during inference\n",            params.flash_attn ? "true" : "false");
+    fprintf(stderr, "            --use-itn           [%-7s] [SenseVoice] Filter duplicate tokens when outputting\n",     params.use_itn ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
@@ -90,6 +92,7 @@ static bool get_stream_params(int argc, char ** argv, sense_voice_stream_params 
         else if (arg == "-mnc"  || arg == "--max-nomute-chunks") { params.max_nomute_chunks = std::stoi(argv[++i]); }
         else if (                  arg == "--use-vad")           { params.use_vad           = true; }
         else if (                  arg == "--chunk-size")        { params.chunk_size        = std::stoi(argv[++i]); }
+        else if (                  arg == "--use-itn")        { params.use_itn        = true; }
 
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
@@ -99,6 +102,20 @@ static bool get_stream_params(int argc, char ** argv, sense_voice_stream_params 
     }
 
     return true;
+}
+
+void sense_voice_free(struct sense_voice_context * ctx) {
+    if (ctx) {
+        ggml_free(ctx->model.ctx);
+
+        ggml_backend_buffer_free(ctx->model.buffer);
+
+        sense_voice_free_state(ctx->state);
+
+        delete ctx->model.model->encoder;
+        delete ctx->model.model;
+        delete ctx;
+    }
 }
 
 
@@ -124,6 +141,7 @@ int main(int argc, char** argv)
     struct sense_voice_context_params cparams = sense_voice_context_default_params();
     cparams.use_gpu = params.use_gpu;
     cparams.flash_attn = params.flash_attn;
+    cparams.use_itn = params.use_itn;
 
     bool is_running = true;
     struct sense_voice_context *ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
@@ -198,26 +216,15 @@ int main(int argc, char** argv)
 
         if (!params.use_vad) {
             // 识别当前已经识别到的文本恩
-            if (sense_voice_full_parallel(ctx, wparams, pcmf32, R_new_chunk, params.n_processors) != 0) {
-                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
-                return 10;
-            }
             printf("\33[2K\r");
             printf("%s", std::string(100, ' ').c_str());
             printf("\33[2K\r");
             printf("[%.2f-%.2f]", idenitified_floats / (SENSE_VOICE_SAMPLE_RATE * 1.0), (R_new_chunk + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0));
-
-            int last_id = 0;
-            for(int i = 4; i < ctx->state->ids.size(); i++)
-            {
-                int id = ctx->state->ids[i];
-                if (id != 0 && id != last_id) {
-                    // printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
-                    printf("%s", ctx->vocab.id_to_token[id].c_str());
-                    last_id = id;
-                }
+            if (sense_voice_full_parallel(ctx, wparams, pcmf32, R_new_chunk, params.n_processors) != 0) {
+                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                return 10;
             }
-
+            sense_voice_print_output(ctx, true, params.use_itn);
             // 时间长度太长了直接换行重新开始
             if (R_new_chunk >= max_nomute_step)
             {
@@ -247,16 +254,8 @@ int main(int argc, char** argv)
                         fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                         return 10;
                     }
-                    int last_id = 0;
-                    for(int i = 4; i < ctx->state->ids.size(); i++)
-                    {
-                        int id = ctx->state->ids[i];
-                        if (id != 0 && id != last_id) {
-                            // printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
-                            printf("%s", ctx->vocab.id_to_token[id].c_str());
-                            last_id = id;
-                        }
-                    }
+                    sense_voice_print_output(ctx, true, params.use_itn);
+
                     printf("\n");
                     if (!isnomute) L_nomute = -1;
                     else if (R_mute >= 0) L_nomute = R_mute;
@@ -282,16 +281,8 @@ int main(int argc, char** argv)
                             fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                             return 10;
                         }
-                        int last_id = 0;
-                        for(int i = 4; i < ctx->state->ids.size(); i++)
-                        {
-                            int id = ctx->state->ids[i];
-                            if (id != 0 && id != last_id) {
-                                // printf("%d %d %s\n", i, id, ctx->vocab.id_to_token[id].c_str());
-                                printf("%s", ctx->vocab.id_to_token[id].c_str());
-                                last_id = id;
-                            }
-                        }
+                        sense_voice_print_output(ctx, true, params.use_itn);
+
                         printf("\n");
                         if (!isnomute) L_nomute = -1;
                         else if (R_mute >= 0) L_nomute = R_mute;
@@ -323,6 +314,6 @@ int main(int argc, char** argv)
         fflush(stdout);
     }
     audio.pause();
-    // sense_voice_free(ctx);
+    sense_voice_free(ctx);
     return 0;
 }
