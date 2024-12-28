@@ -497,7 +497,7 @@ int main(int argc, char ** argv) {
             wparams.no_timestamps    = params.no_timestamps;
 
             std::vector<double> pcmf32_tmp;           // 记录需要解析的段落
-            int32_t L_nomute = -1, R_nomute = -1, L_mute = -1, R_mute = -1;  // [L_nomute, R_nomute)永远为需要解析的段落，[L_mute, R_mute)永远为最近一段静音空挡
+            int32_t L_nomute = -1, L_mute = -1, R_mute = -1;  // [L_nomute, R_nomute)永远为需要解析的段落，[L_mute, R_mute)永远为最近一段静音空挡
             const int n_sample_step = params.chunk_size * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
             const int keep_nomute_step = params.chunk_size * params.min_mute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
             const int max_nomute_step = params.chunk_size * params.max_nomute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
@@ -511,11 +511,7 @@ int main(int argc, char ** argv) {
 
                 if (L_nomute >= 0 && R_this_chunk - L_nomute >= max_nomute_step)
                 {
-                    if(L_mute >= 0)
-                        R_nomute = L_mute;
-                    else
-                        R_nomute = R_this_chunk;
-                    // printf("3333: %d %d %d %d %d\n", L_nomute, R_nomute, L_mute, i, R_this_chunk);
+                    int R_nomute = L_mute >= 0 ? L_mute : R_this_chunk;
                     pcmf32_tmp.resize(R_nomute - L_nomute);
                     std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
                     printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
@@ -523,10 +519,11 @@ int main(int argc, char ** argv) {
                         fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                         return 10;
                     }
+                    sense_voice_print_output(ctx, true, params.use_itn);
                     if (!isnomute) L_nomute = -1;
                     else if (R_mute >= 0) L_nomute = R_mute;
                     else L_nomute = i;
-                    R_nomute = L_mute = R_mute = -1;
+                    L_mute = R_mute = -1;
                     continue;
                 }
                 if (isnomute)
@@ -540,26 +537,26 @@ int main(int argc, char ** argv) {
                     // printf("Mute || L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
                     if (L_mute >= L_nomute && L_nomute >= 0 && R_this_chunk - L_mute >= keep_nomute_step)
                     {
-                        R_nomute = L_mute;
                         // printf("2222: %d %d %d %d %d\n", L_nomute, R_nomute, L_mute, i, R_this_chunk);
-                        pcmf32_tmp.resize(R_nomute - L_nomute);
-                        std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
-                        printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
+                        pcmf32_tmp.resize(L_mute - L_nomute);
+                        std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + L_mute, pcmf32_tmp.begin());
+                        printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), L_mute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
                         if (sense_voice_full_parallel(ctx, wparams, pcmf32_tmp, pcmf32_tmp.size(), params.n_processors) != 0) {
                             fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                             return 10;
                         }
+                        sense_voice_print_output(ctx, true, params.use_itn);
                         if (!isnomute) L_nomute = -1;
                         else if (R_mute >= 0) L_nomute = R_mute;
                         else L_nomute = i;
-                        R_nomute = L_mute = R_mute = -1;
+                        L_mute = R_mute = -1;
                     }
                 }
             }
             // 最后一段
             if(L_nomute >= 0)
             {
-                R_nomute = pcmf32.size();
+                int R_nomute = pcmf32.size();
                 printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
                 pcmf32_tmp.resize(R_nomute - L_nomute);
                 std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
@@ -567,10 +564,14 @@ int main(int argc, char ** argv) {
                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                     return 10;
                 } 
-                L_nomute = R_nomute = L_mute = R_mute = -1;
+                sense_voice_print_output(ctx, true, params.use_itn);
+                L_nomute = L_mute = R_mute = -1;
             }
         }
-
+        SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                            __func__,
+                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / 1e6,
+                            (ctx->state->t_encode_us + ctx->state->t_decode_us) / (1e6 * ctx->state->duration));
     }
     sense_voice_free(ctx);
     return 0;

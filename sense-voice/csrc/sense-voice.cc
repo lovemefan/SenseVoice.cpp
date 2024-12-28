@@ -752,14 +752,6 @@ int sense_voice_full_with_state(
 
     if (!params.in_stream)
     {
-        int last_id = 0;
-        for(int id: state->ids){
-            if (id != 0 && id != last_id) {
-                printf("%s", ctx->vocab.id_to_token[id].c_str());
-                last_id = id;
-            }
-        }
-        printf("\n");
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
                             __func__,
                             (state->t_encode_us + state->t_decode_us) / 1e6,
@@ -868,3 +860,16 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
     return ret;
 }
 
+void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn)
+{
+    int last_id = 0;
+    for(int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++)
+    {
+        int id = ctx->state->ids[i];
+        if (id != 0 && !(use_itn && last_id == id)) {
+            printf("%s", ctx->vocab.id_to_token[id].c_str());
+            last_id = id;
+        }
+    }
+    printf("\n");
+}
