@@ -857,14 +857,13 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
 
 void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self)
 {
-    int last_id = 0;
     for(int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++)
     {
         int id = ctx->state->ids[i];
-        if (id != 0 && !(use_itn && last_id == id)) {
+        if (i > 0 && ctx->state->ids[i - 1] == ctx->state->ids[i])
+            continue;
+        if (id)
             printf("%s", ctx->vocab.id_to_token[id].c_str());
-            last_id = id;
-        }
     }
     if(!refresh_self) printf("\n");
 }
