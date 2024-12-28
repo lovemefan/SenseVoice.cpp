@@ -64,7 +64,6 @@ struct sense_voice_full_params sense_voice_full_default_params(enum sense_voice_
 
 
             /*.debug_mode        =*/ false,
-            /* in_stream         =*/ false,
             /* audio_ctx         =*/ 0,
 
             /*.greedy            =*/ {
