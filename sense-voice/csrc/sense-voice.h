@@ -22,6 +22,6 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
                               std::vector<double> &samples,
                               int n_samples,
                               int n_processors);
-void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn);
+void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self=false);
 void sense_voice_free_state(struct sense_voice_state * state);
 #endif//SENSEVOICE_CPP_SENSE_VOICE_H

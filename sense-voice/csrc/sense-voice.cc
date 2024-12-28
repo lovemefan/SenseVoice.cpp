@@ -860,7 +860,7 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
     return ret;
 }
 
-void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn)
+void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self)
 {
     int last_id = 0;
     for(int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++)
@@ -871,5 +871,5 @@ void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix
             last_id = id;
         }
     }
-    printf("\n");
+    if(!refresh_self) printf("\n");
 }
