@@ -188,7 +188,6 @@ int main(int argc, char** argv)
 
         wparams.greedy.best_of        = params.best_of;
         wparams.beam_search.beam_size = params.beam_size;
-        wparams.in_stream = true;
     }
 
     int idenitified_floats = 0, R_new_chunk = 0, L_new_chunk = 0;

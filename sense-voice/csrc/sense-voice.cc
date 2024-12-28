@@ -650,7 +650,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params(const 
 int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
                                           struct sense_voice_state * state,
                                           std::vector<double> &pcmf32,
-                                          bool debug, bool in_stream,
+                                          bool debug,
                                           int n_threads) {
     const int64_t t_start_us = ggml_time_us();
 
@@ -708,7 +708,7 @@ int sense_voice_full_with_state(
 
     // compute features (fbank + cmvn)
     if (n_samples > 0) {
-        sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.in_stream, params.n_threads);
+        sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.n_threads);
     }
     // initialize the decoders
     int n_decoders = 1;

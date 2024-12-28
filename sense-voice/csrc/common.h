@@ -422,7 +422,6 @@ struct sense_voice_full_params {
                           // printing realtime
 
     bool debug_mode;  // enable debug_mode provides extra info (eg. Dump log_mel)
-    bool in_stream;
     int  audio_ctx;
 
     struct {
