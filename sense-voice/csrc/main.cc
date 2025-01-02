@@ -509,9 +509,10 @@ int main(int argc, char ** argv) {
                 int R_this_chunk = std::min(i + n_sample_step, int(pcmf32.size()));
                 bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, R_this_chunk - i, SENSE_VOICE_SAMPLE_RATE);
 
+                // fprintf(stderr, "Mute || L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
                 if (L_nomute >= 0 && R_this_chunk - L_nomute >= max_nomute_step)
                 {
-                    int R_nomute = L_mute >= 0 ? L_mute : R_this_chunk;
+                    int R_nomute = L_mute >= 0 && L_mute >= L_nomute ? L_mute : R_this_chunk;
                     pcmf32_tmp.resize(R_nomute - L_nomute);
                     std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
                     printf("[%.2f-%.2f]", L_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0), R_nomute / (SENSE_VOICE_SAMPLE_RATE * 1.0));
@@ -521,7 +522,7 @@ int main(int argc, char ** argv) {
                     }
                     sense_voice_print_output(ctx, true, params.use_itn);
                     if (!isnomute) L_nomute = -1;
-                    else if (R_mute >= 0) L_nomute = R_mute;
+                    else if (R_mute >= 0 && L_mute >= L_nomute) L_nomute = R_mute;
                     else L_nomute = i;
                     L_mute = R_mute = -1;
                     continue;
@@ -534,7 +535,6 @@ int main(int argc, char ** argv) {
                 {
                     if (R_mute != i) L_mute = i;
                     R_mute = R_this_chunk;
-                    // printf("Mute || L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
                     if (L_mute >= L_nomute && L_nomute >= 0 && R_this_chunk - L_mute >= keep_nomute_step)
                     {
                         // printf("2222: %d %d %d %d %d\n", L_nomute, R_nomute, L_mute, i, R_this_chunk);

@@ -128,7 +128,7 @@ bool load_wav_file(const char *filename, int32_t *sampling_rate,
 
 
 template<typename T>
-bool vad_energy_zcr(typename std::vector<T>::iterator pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
+bool vad_energy_zcr(const typename std::vector<T>::iterator &pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
 {
     const int frame_size = 256; // 16ms at 16kHz
     const int frame_shift = 128; // 50% overlap
