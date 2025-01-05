@@ -165,7 +165,10 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "             --prompt PROMPT     [%-7s] initial prompt (max n_text_ctx/2 tokens)\n",       params.prompt.c_str());
     fprintf(stderr, "  -m FNAME,  --model FNAME       [%-7s] model path\n",                                     params.model.c_str());
     fprintf(stderr, "  -f FNAME,  --file FNAME        [%-7s] input WAV file path\n",                            "");
-    fprintf(stderr, "  -lpt N,    --min_speech_duration_ms   [%-7.2f] log probability threshold for decoder fail\n",   params.logprob_thold);
+    fprintf(stderr, "             --min_speech_duration_ms   [%-7.2d] min_speech_duration_ms\n",                params.min_speech_duration_ms);
+    fprintf(stderr, "             --max_speech_duration_ms   [%-7.2d] log probability threshold for decoder fail\n",   params.max_speech_duration_ms);
+    fprintf(stderr, "             --min_silence_duration_ms   [%-7.2d] min_silence_duration_ms\n",              params.min_silence_duration_ms);
+    fprintf(stderr, "             --speech_pad_ms     [%-7.2d] speech_pad_ms\n",                                params.speech_pad_ms);
     fprintf(stderr, "  -oved D,   --ov-e-device DNAME [%-7s] the OpenVINO device used for encode inference\n",  params.openvino_encode_device.c_str());
     fprintf(stderr, "  -ls,       --log-score         [%-7s] log best decoder scores of tokens\n",              params.log_score?"true":"false");
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
