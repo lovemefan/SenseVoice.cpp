@@ -286,17 +286,3 @@ bool load_wav_file(const char *filename, int32_t *sampling_rate,
   }
 
 }
-
-template<typename T>
-void high_pass_filter(std::vector<T> & data, float cutoff, float sample_rate) {
-    const float rc = 1.0f / (2.0f * M_PI * cutoff);
-    const float dt = 1.0f / sample_rate;
-    const float alpha = dt / (rc + dt);
-
-    float y = data[0];
-
-    for (size_t i = 1; i < data.size(); i++) {
-        y = alpha * (y + data[i] - data[i - 1]);
-        data[i] = y;
-    }
-}
