@@ -264,7 +264,7 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-ng"   || arg == "--no-gpu")          { params.use_gpu         = false; }
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
-        else if (arg == "-itn"   || arg == "--use-itn")        { params.use_itn         = true; }
+        else if (arg == "-itn"  || arg == "--use-itn")         { params.use_itn         = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -548,7 +548,7 @@ int main(int argc, char ** argv) {
                 ggml_set_zero(ctx->state->vad_lstm_hidden_state);
             }
 
-            int offset = offset = CHUNK_SIZE - CONTEXT_SIZE;
+            int offset = CHUNK_SIZE - CONTEXT_SIZE;
 
             auto & sched = ctx->state->sched_vad.sched;
             ggml_cgraph *gf = silero_vad_build_graph(*ctx, *ctx->state);
@@ -643,6 +643,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
+                            sense_voice_print_output(ctx, false, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             if (next_start < prev_end) {
                                 triggered = false;
@@ -656,6 +657,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
+                            sense_voice_print_output(ctx, false, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             prev_end = next_start = temp_end = 0;
 
@@ -690,6 +692,7 @@ int main(int argc, char ** argv) {
                                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                     return 10;
                                 }
+                                sense_voice_print_output(ctx, false, params.use_itn, false);
                                 current_speech_end = current_speech_start = 0;
                             }
                             prev_end = next_start = temp_end = 0;
@@ -710,6 +713,7 @@ int main(int argc, char ** argv) {
                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                     return 10;
                 }
+                sense_voice_print_output(ctx, false, params.use_itn, false);
             }
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
