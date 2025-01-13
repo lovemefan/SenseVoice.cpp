@@ -643,7 +643,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
-                            sense_voice_print_output(ctx, false, params.use_itn, false);
+                            sense_voice_print_output(ctx, true, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             if (next_start < prev_end) {
                                 triggered = false;
@@ -657,7 +657,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
-                            sense_voice_print_output(ctx, false, params.use_itn, false);
+                            sense_voice_print_output(ctx, true, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             prev_end = next_start = temp_end = 0;
 
@@ -692,7 +692,7 @@ int main(int argc, char ** argv) {
                                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                     return 10;
                                 }
-                                sense_voice_print_output(ctx, false, params.use_itn, false);
+                                sense_voice_print_output(ctx, true, params.use_itn, false);
                                 current_speech_end = current_speech_start = 0;
                             }
                             prev_end = next_start = temp_end = 0;
@@ -713,7 +713,7 @@ int main(int argc, char ** argv) {
                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                     return 10;
                 }
-                sense_voice_print_output(ctx, false, params.use_itn, false);
+                sense_voice_print_output(ctx, true, params.use_itn, false);
             }
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
