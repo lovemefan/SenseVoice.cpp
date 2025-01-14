@@ -16,4 +16,4 @@ set(SOURCE_FILES
 )
 
 add_library(sense-voice-core STATIC ${SOURCE_FILES})
-target_link_libraries(sense-voice-core PRIVATE ggml)
+target_link_libraries(sense-voice-core PRIVATE ggml stdc++fs)
