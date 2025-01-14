@@ -483,8 +483,8 @@ struct sense_voice_model {
 
 struct sense_voice_context_params {
     bool use_gpu;
-    bool  flash_attn;
     bool use_itn;
+    bool flash_attn;
     int gpu_device;  // CUDA device
     ggml_backend_sched_eval_callback cb_eval;
     void * cb_eval_user_data;
