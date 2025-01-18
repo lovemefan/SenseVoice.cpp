@@ -23,6 +23,18 @@ endif ()
 
 
 
+if (EMSCRIPTEN)
+    set(BUILD_SHARED_LIBS_DEFAULT OFF)
+
+    option(GGML_WASM_SINGLE_FILE "ggml: embed WASM inside the generated ggml.js" ON)
+else()
+    if (MINGW)
+        set(BUILD_SHARED_LIBS_DEFAULT OFF)
+    else()
+        set(BUILD_SHARED_LIBS_DEFAULT ON)
+    endif()
+endif()
+
 option(BUILD_SHARED_LIBS "build shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
 
 # general
@@ -66,10 +78,10 @@ if(GGML_USE_BLAS)
     add_definitions(-DGGML_USE_BLAS)
 endif()
 
-add_subdirectory(sense-voice)
 include_directories(${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/include/ggml ${PROJECT_SOURCE_DIR}/sense-voice/csrc/third-party/ggml/src)
 add_subdirectory(sense-voice/csrc/third-party/ggml)
 
+add_subdirectory(sense-voice)
 
 if (SENSEVOICE_BUILD_TESTS)
     message(DEBUG "Test scripts")
