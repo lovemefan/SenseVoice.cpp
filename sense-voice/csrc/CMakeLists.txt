@@ -16,4 +16,10 @@ set(SOURCE_FILES
 )
 
 add_library(sense-voice-core STATIC ${SOURCE_FILES})
-target_link_libraries(sense-voice-core PRIVATE ggml stdc++fs)
+
+set(ExampleLibs ggml)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+    list(APPEND ExampleLibs stdc++fs)
+endif()
+
+target_link_libraries(sense-voice-core PRIVATE ${ExampleLibs})
