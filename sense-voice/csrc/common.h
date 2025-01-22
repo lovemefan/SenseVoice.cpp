@@ -299,7 +299,7 @@ struct sense_voice_segment {
     int64_t t0;
     int64_t t1;
     std::string text;
-    std::vector<size_t> tokens;
+    std::vector<int> tokens;
     // std::vector<float> 
     // bool speaker_turn_next;
 };

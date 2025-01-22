@@ -59,15 +59,20 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
 
     ggml_cgraph *gf = ggml_new_graph_custom(ctx0, SENSEVOICE_DECODER_MAX_NODES, false);
 
-    ggml_tensor *encoder_out = ggml_new_tensor_2d(ctx0, state.encoder_out->type,
-                                                  state.encoder_out->ne[0], state.encoder_out->ne[1]);
+    ggml_tensor *encoder_out = ggml_new_tensor_3d(ctx0, state.encoder_out->type,
+                                                  state.encoder_out->ne[0], state.encoder_out->ne[1], 
+                                                  state.encoder_out->ne[2]);
     ggml_set_name(encoder_out, "encoder_out");
     ggml_set_input(encoder_out);
 
     ggml_tensor *cur;
     {
-        cur = ggml_mul_mat(ctx0, model->ctc_out_linear_weight, encoder_out);
+        // Reshape encoder_out to merge batch and time dimensions
+        cur = ggml_reshape_2d(ctx0, encoder_out, encoder_out->ne[0], encoder_out->ne[1] * encoder_out->ne[2]);
+        cur = ggml_mul_mat(ctx0, model->ctc_out_linear_weight, cur);
         cur = ggml_add(ctx0, cur, model->ctc_out_linear_bias);
+        // Reshape back to 3D
+        cur = ggml_reshape_3d(ctx0, cur, cur->ne[0], encoder_out->ne[1], encoder_out->ne[2]);
     }
     ggml_tensor * probs = ggml_soft_max(ctx0, cur);
     ggml_tensor * argmax_logit = ggml_argmax(ctx0, probs);
@@ -113,6 +118,19 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
             ggml_tensor *argmax_logit = ggml_graph_node(gf, ggml_graph_n_nodes(gf) - 1);
             state.ids.resize(argmax_logit->ne[0]);
             ggml_backend_tensor_get(argmax_logit, state.ids.data(), 0, sizeof(int) * argmax_logit->ne[0]);
+
+            const int32_t n_logits = argmax_logit->ne[0] * argmax_logit->ne[1];
+            // Get the tensor data into a temporary buffer
+            std::vector<int> temp_buffer(n_logits);
+            ggml_backend_tensor_get(argmax_logit, temp_buffer.data(), 0, sizeof(int) * n_logits);
+            // TODO 临时处理，需要清理
+            state.result_all.resize(argmax_logit->ne[1]);
+            // Copy data into 2D array
+            for(int32_t i = 0; i < argmax_logit->ne[1]; i++)
+            {
+                int posL = i * argmax_logit->ne[0];
+                state.result_all[i].tokens = std::vector<int>(temp_buffer.begin() + posL, temp_buffer.begin() + posL + argmax_logit->ne[0]);
+            }
         }
 
     }
