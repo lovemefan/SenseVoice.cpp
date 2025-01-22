@@ -588,7 +588,7 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     }
 
 
-    state->logits_id.reserve(ctx->model.hparams.n_vocab);
+    // state->logits_id.reserve(ctx->model.hparams.n_vocab);
 
     // vad allocator
     {
@@ -729,10 +729,6 @@ int sense_voice_full_with_state(
         struct sense_voice_full_params params,
         std::vector<double> pcmf32,
         int   n_samples) {
-    // clear old results
-    auto & result_all = state->result_all;
-    result_all.clear();
-
     // compute features (fbank + cmvn)
     if (n_samples > 0) {
         sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.n_threads);
@@ -789,99 +785,7 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
                               std::vector<double> &pcmf32,
                               int n_samples,
                               int n_processors){
-    if (n_processors == 1) {
-        return sense_voice_full_with_state(ctx, ctx->state, params, pcmf32, n_samples);
-    }
-    int ret = 0;
-    
-    // prepare separate states for each thread
-    std::vector<sense_voice_state*> states;
-
-    const int offset_samples = (SENSE_VOICE_SAMPLE_RATE*params.offset_ms)/1000;
-    const int n_samples_per_processor = (n_samples - offset_samples)/n_processors;
-
-    // the calling thread will process the first chunk
-    // while the other threads will process the remaining chunks
-
-    std::vector<std::thread> workers(n_processors - 1);
-    for (int i = 0; i < n_processors - 1; ++i) {
-        // create a new state for each thread
-        states.push_back(sense_voice_init_state(ctx));
-
-        const int start_samples = offset_samples + (i + 1)*n_samples_per_processor;
-        const int n_samples_cur = (i == n_processors - 2) ? n_samples - start_samples : n_samples_per_processor;
-
-        auto params_cur = params;
-
-        params_cur.offset_ms = 0;
-        params_cur.print_progress = false;
-
-        params_cur.progress_callback = nullptr;
-        params_cur.progress_callback_user_data = nullptr;
-
-        workers[i] = std::thread(sense_voice_full_with_state, ctx, states[i], std::move(params_cur), pcmf32, n_samples_cur);
-    }
-
-    {
-        auto params_cur = params;
-
-        // Run the first transformation using default state but only for the first chunk.
-        ret = sense_voice_full_with_state(ctx, ctx->state, std::move(params_cur), pcmf32, offset_samples + n_samples_per_processor);
-    }
-
-    for (int i = 0; i < n_processors - 1; ++i) {
-        workers[i].join();
-    }
-
-    const int64_t offset_t = (int64_t) params.offset_ms/10.0;
-
-    // combine results into result_state->result_all from all other states
-    for (int i = 0; i < n_processors - 1; ++i) {
-        auto& results_i = states[i]->result_all;
-
-        for (auto& result : results_i) {
-            // correct the segment timestamp taking into account the offset
-            result.t0 += 100 * ((i + 1) * n_samples_per_processor) / SENSE_VOICE_SAMPLE_RATE + offset_t;
-            result.t1 += 100 * ((i + 1) * n_samples_per_processor) / SENSE_VOICE_SAMPLE_RATE + offset_t;
-
-            // make sure that segments are not overlapping
-            if (!ctx->state->result_all.empty()) {
-                result.t0 = std::max(result.t0, ctx->state->result_all.back().t1);
-            }
-
-            ctx->state->result_all.push_back(std::move(result));
-
-        }
-
-
-        ctx->state->t_sample_us += states[i]->t_sample_us;
-        ctx->state->t_encode_us += states[i]->t_encode_us;
-        ctx->state->t_decode_us += states[i]->t_decode_us;
-        ctx->state->t_prompt_us += states[i]->t_prompt_us;
-
-        ctx->state->n_sample += states[i]->n_sample;
-        ctx->state->n_encode += states[i]->n_encode;
-        ctx->state->n_decode += states[i]->n_decode;
-        ctx->state->n_prompt += states[i]->n_prompt;
-
-        sense_voice_free_state(states[i]);
-    }
-
-    // average the timings
-    ctx->state->t_feature_us    /= n_processors;
-    ctx->state->t_sample_us /= n_processors;
-    ctx->state->t_encode_us /= n_processors;
-    ctx->state->t_decode_us /= n_processors;
-
-    // print information about the audio boundaries
-    SENSE_VOICE_LOG_WARN("\n");
-    SENSE_VOICE_LOG_WARN("%s: the audio has been split into %d chunks at the following times:\n", __func__, n_processors);
-    for (int i = 0; i < n_processors - 1; ++i) {
-        SENSE_VOICE_LOG_WARN("%s: split %d - %s\n", __func__, (i + 1), to_timestamp(100*((i + 1)*n_samples_per_processor)/SENSE_VOICE_SAMPLE_RATE + offset_t).c_str());
-    }
-    SENSE_VOICE_LOG_WARN("%s: the transcription quality may be degraded near these boundaries\n", __func__);
-
-    return ret;
+    return sense_voice_full_with_state(ctx, ctx->state, params, pcmf32, n_samples);
 }
 
 void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self)
