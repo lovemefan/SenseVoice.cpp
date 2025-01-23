@@ -125,3 +125,58 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
 
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<double> &data);
+
+
+template<typename T>
+bool vad_energy_zcr(const typename std::vector<T>::iterator &pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
+{
+    const int frame_size = 256; // 16ms at 16kHz
+    const int frame_shift = 128; // 50% overlap
+    
+    if (siz < frame_size) return false;
+
+    int num_frames = (siz - frame_size) / frame_shift + 1;
+    std::vector<T> energies(num_frames);
+    std::vector<T> zcrs(num_frames);
+
+    // Calculate short-time energy and zero-crossing rate for each frame
+    for (int f = 0; f < num_frames; f++) {
+        T energy = 0.0f;
+        int zcr = 0;
+        
+        int frame_start = f * frame_shift;
+        
+        // Calculate energy
+        for (int i = 0; i < frame_size; i++) {
+            T sample = pcmf32[frame_start + i];
+            energy += sample * sample;
+        }
+        energy /= frame_size;
+        energies[f] = energy;
+        
+        // Calculate zero-crossing rate
+        for (int i = 1; i < frame_size; i++) {
+            if ((pcmf32[frame_start + i - 1] * pcmf32[frame_start + i]) < 0)
+                zcr++;
+        }
+        zcrs[f] = (T)zcr / frame_size;
+    }
+
+    // Get average energy and ZCR
+    T avg_energy = 0.0f;
+    T avg_zcr = 0.0f;
+    for (int f = 0; f < num_frames; f++) {
+        avg_energy += energies[f];
+        avg_zcr += zcrs[f];
+    }
+    avg_energy /= num_frames;
+    avg_zcr /= num_frames;
+
+    if (verbose) {
+        fprintf(stderr, "%s: avg_energy: %f, avg_zcr: %f, energy_threshold: %f, zcr_threshold: %f\n", 
+                __func__, avg_energy, avg_zcr, energy_threshold, zcr_threshold);
+    }
+
+    // Voice activity is detected if either energy or ZCR exceeds their thresholds
+    return (avg_energy > energy_threshold) || (avg_zcr > zcr_threshold);
+}
