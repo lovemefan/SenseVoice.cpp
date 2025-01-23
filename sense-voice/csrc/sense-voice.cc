@@ -509,7 +509,6 @@ void sense_voice_free_state(struct sense_voice_state * state) {
                 ggml_backend_buffer_free(state->feature.buffer);
                 ggml_backend_buffer_free(state->vad_lstm_hidden_state_buffer);
                 ggml_backend_buffer_free(state->vad_lstm_context_buffer);
-                state->feature.n_len_org = 0;
                 state->feature.ctx = nullptr;
                 state->feature.tensor = nullptr;
                 state->feature.buffer = nullptr;
@@ -578,7 +577,6 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     // set input
     {
         // init features
-        state->feature.n_len_org = SENSE_VOICE_CHUNK_SIZE;
         state->feature.n_len =SENSE_VOICE_CHUNK_SIZE;
         state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
         state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx,
@@ -695,7 +693,6 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
     // set input
     {
         // init features
-        state->feature.n_len_org = state->feature.data.size();
         state->feature.n_len = state->feature.data.size() / (state->feature.n_mel * state->feature.lfr_m);
         state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
         state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx,
@@ -708,7 +705,6 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
         ggml_tallocr_alloc(&alloc, state->feature.tensor);
 
         auto &feature = state->feature.tensor;
-        const int n_ctx = state->feature.n_len;
 
         assert(state->feature.n_mel == ctx->model.hparams.n_mels);
 
