@@ -64,6 +64,7 @@ struct sense_voice_context_params sense_voice_context_default_params() {
     struct sense_voice_context_params result = {
             /*.use_gpu              =*/ true,
             /*.flash_attn           =*/ false,
+            /*.use_itn              =*/ false,
             /*.gpu_device           =*/ 0
     };
     return result;
@@ -409,7 +410,7 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
             _embedding[0] = ctx.language_id;
             _embedding[1] = 1;
             _embedding[2] = 2;
-            _embedding[3] = 14;
+            _embedding[3] = ctx.params.use_itn ? 14 : 15;
 
             ggml_backend_tensor_set(embedding, &_embedding, 0, 4*sizeof(int));
 

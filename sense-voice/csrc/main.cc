@@ -71,6 +71,7 @@ struct sense_voice_params {
     bool log_score       = false;
     bool use_gpu         = true;
     bool flash_attn      = false;
+    bool use_itn         = false;
 
     std::string language  = "auto";
     std::string prompt;
@@ -173,6 +174,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -ls,       --log-score         [%-7s] log best decoder scores of tokens\n",              params.log_score?"true":"false");
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n",                                params.flash_attn ? "true" : "false");
+    fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
@@ -262,6 +264,7 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-ng"   || arg == "--no-gpu")          { params.use_gpu         = false; }
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
+        else if (arg == "-itn"  || arg == "--use-itn")         { params.use_itn         = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -456,6 +459,7 @@ int main(int argc, char ** argv) {
 
     cparams.use_gpu    = params.use_gpu;
     cparams.flash_attn = params.flash_attn;
+    cparams.use_itn    = params.use_itn;
 
     struct sense_voice_context * ctx = sense_voice_small_init_from_file_with_params(params.model.c_str(), cparams);
 
@@ -471,7 +475,6 @@ int main(int argc, char ** argv) {
         const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
 
         std::vector<double> pcmf32;               // mono-channel F32 PCM
-
 
         int sample_rate;
         if (!::load_wav_file(fname_inp.c_str(), &sample_rate, pcmf32)) {
@@ -494,13 +497,10 @@ int main(int argc, char ** argv) {
             ctx->state->duration = float(pcmf32.size())/sample_rate;
             fprintf(stderr, "\n");
         }
-
         sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
-        // run inference
+
         {
-
             wparams.strategy = (params.beam_size > 1 ) ? SENSE_VOICE_SAMPLING_BEAM_SEARCH : SENSE_VOICE_SAMPLING_GREEDY;
-
             wparams.print_progress   = params.print_progress;
             wparams.print_timestamps = !params.no_timestamps;
             wparams.language         = params.language.c_str();
@@ -508,12 +508,9 @@ int main(int argc, char ** argv) {
             wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
             wparams.offset_ms        = params.offset_t_ms;
             wparams.duration_ms      = params.duration_ms;
-
             wparams.debug_mode       = params.debug_mode;
-
             wparams.greedy.best_of        = params.best_of;
             wparams.beam_search.beam_size = params.beam_size;
-
             wparams.no_timestamps    = params.no_timestamps;
 
 
@@ -604,6 +601,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
+                            sense_voice_print_output(ctx, true, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             if (next_start < prev_end) {
                                 triggered = false;
@@ -617,6 +615,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
+                            sense_voice_print_output(ctx, true, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             prev_end = next_start = temp_end = 0;
 
@@ -651,6 +650,7 @@ int main(int argc, char ** argv) {
                                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                     return 10;
                                 }
+                                sense_voice_print_output(ctx, true, params.use_itn, false);
                                 current_speech_end = current_speech_start = 0;
                             }
                             prev_end = next_start = temp_end = 0;
@@ -671,6 +671,7 @@ int main(int argc, char ** argv) {
                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                     return 10;
                 }
+                sense_voice_print_output(ctx, true, params.use_itn, false);
             }
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
