@@ -22,7 +22,6 @@ ggml_cgraph *silero_vad_build_graph(
         sense_voice_context &ctx, sense_voice_state &state){
 
     const auto &model = ctx.vad_model.model;
-    const auto &hparams = ctx.model.hparams;
 
     struct ggml_init_params params = {
             /*.mem_size   =*/state.sched_vad.meta.size(),
@@ -64,19 +63,19 @@ ggml_cgraph *silero_vad_build_graph(
     {
         {
             cur = ggml_conv_1d(ctx0, model->encoders_layer[0].reparam_conv_w, cur, 1, 1, 1);
-            cur = ggml_add(ctx0, cur, ggml_transpose(ctx0, model->encoders_layer[0].reparam_conv_b));
+            cur = ggml_add(ctx0, cur, ggml_cont(ctx0, ggml_transpose(ctx0, model->encoders_layer[0].reparam_conv_b)));
             cur = ggml_relu(ctx0, cur);
 
             cur = ggml_conv_1d(ctx0, model->encoders_layer[1].reparam_conv_w, cur, 2, 1, 1);
-            cur = ggml_add(ctx0, cur, ggml_transpose(ctx0, model->encoders_layer[1].reparam_conv_b));
+            cur = ggml_add(ctx0, cur,  ggml_cont(ctx0, ggml_transpose(ctx0, model->encoders_layer[1].reparam_conv_b)));
             cur = ggml_relu(ctx0, cur);
 
             cur = ggml_conv_1d(ctx0, model->encoders_layer[2].reparam_conv_w, cur, 2, 1, 1);
-            cur = ggml_add(ctx0, cur, ggml_transpose(ctx0, model->encoders_layer[2].reparam_conv_b));
+            cur = ggml_add(ctx0, cur,  ggml_cont(ctx0, ggml_transpose(ctx0, model->encoders_layer[2].reparam_conv_b)));
             cur = ggml_relu(ctx0, cur);
 
             cur = ggml_conv_1d(ctx0, model->encoders_layer[3].reparam_conv_w, cur, 1, 1, 1);
-            cur = ggml_add(ctx0, cur, ggml_transpose(ctx0, model->encoders_layer[3].reparam_conv_b));
+            cur = ggml_add(ctx0, cur,  ggml_cont(ctx0, ggml_transpose(ctx0, model->encoders_layer[3].reparam_conv_b)));
             cur = ggml_relu(ctx0, cur);
         }
 
@@ -155,11 +154,12 @@ ggml_cgraph *silero_vad_build_graph(
     return gf;
 }
 
+
 bool silero_vad_encode_internal(sense_voice_context &ctx,
                                 sense_voice_state &state,
                                 std::vector<float> chunk,
                                 const int n_threads,
-                                const double &speech_prob){
+                                float &speech_prob){
     {
         auto & sched = ctx.state->sched_vad.sched;
         ggml_cgraph *gf = silero_vad_build_graph(ctx, state);
@@ -197,6 +197,6 @@ bool silero_vad_encode_internal(sense_voice_context &ctx,
             ggml_backend_tensor_copy(lstm_hidden_state, state.vad_lstm_hidden_state);
 
         }
-
+        ggml_backend_tensor_get(ggml_graph_get_tensor(gf, "logit"), &speech_prob, 0, sizeof(speech_prob));
     }
 }

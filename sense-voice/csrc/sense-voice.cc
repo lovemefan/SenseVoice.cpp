@@ -59,15 +59,17 @@ static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_vo
 static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
     ggml_backend_t result = nullptr;
 
-    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
-        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
-        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU) {
-            SENSE_VOICE_LOG_INFO("%s: using %s backend\n", __func__, ggml_backend_dev_name(dev));
-            ggml_backend_t result = ggml_backend_dev_init(dev, nullptr);
-            if (!result) {
-                SENSE_VOICE_LOG_ERROR("%s: failed to initialize %s backend\n", __func__, ggml_backend_dev_name(dev));
+    if (params.use_gpu) {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU) {
+                SENSE_VOICE_LOG_INFO("%s: using %s backend\n", __func__, ggml_backend_dev_name(dev));
+                ggml_backend_t result = ggml_backend_dev_init(dev, nullptr);
+                if (!result) {
+                    SENSE_VOICE_LOG_ERROR("%s: failed to initialize %s backend\n", __func__, ggml_backend_dev_name(dev));
+                }
+                return result;
             }
-            return result;
         }
     }
 
@@ -96,11 +98,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         const int n_kv = gguf_get_n_kv(gguf_ctx);
 
         SENSE_VOICE_LOG_DEBUG("%s: n_kv: %d\n", __func__, n_kv);
-
-        for (int i = 0; i < n_kv; ++i) {
-            const char *key = gguf_get_key(gguf_ctx, i);
-            SENSE_VOICE_LOG_DEBUG("%s: %s        \n", __func__, key);
-        }
     }
 
     SENSE_VOICE_LOG_INFO("%s: loading model\n", __func__);
@@ -154,8 +151,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             return false;
         }
 
-        const size_t scale = sense_voice.hparams.ftype ? 1 : 2;
-
         SENSE_VOICE_LOG_INFO("%s: n_vocab = %d\n", __func__, hparams.n_vocab);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_hidden_state = %d\n", __func__,
                             hparams.n_encoder_hidden_state);
@@ -197,7 +192,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         }
         std::vector<const char *> tokens;
         tokens.resize(n_vocab);
-        for (uint32_t i = 0; i < n_vocab; i++) {
+        for (int i = 0; i < n_vocab; i++) {
             word = gguf_get_arr_str(gguf_ctx, token_idx, i);
             vocab.token_to_id[word] = i;
             vocab.id_to_token[i] = word;
@@ -213,14 +208,9 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
         // initialize all memory buffers
         // always have at least one decoder
-        // Todo : remove this if else when ggml_backend_metal_buffer_type_get_max_size is available
-        if (sctx.params.use_gpu) {
-            sctx.model.buffer = ggml_backend_alloc_ctx_tensors(sctx.model.ctx, sense_voice_backend_init_gpu(sctx.params));
-        } else{
-            sctx.model.buffer = ggml_backend_alloc_ctx_tensors_from_buft(sctx.model.ctx, sense_voice_default_buffer_type(sctx.params));
-        }
-//        sctx.model.buffer = ggml_backend_alloc_ctx_tensors(sctx.model.ctx, ggml_backend_metal_init());
+        // allocate tensors in the backend buffers
 
+        sctx.model.buffer = ggml_backend_alloc_ctx_tensors_from_buft(sctx.model.ctx, sense_voice_default_buffer_type(sctx.params));
 
         if (!sctx.model.buffer) {
             SENSE_VOICE_LOG_ERROR("%s: failed to allocate memory for the model\n", __func__);

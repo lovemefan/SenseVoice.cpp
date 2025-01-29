@@ -15,9 +15,7 @@
 3. 支持flash attention解码
 4. 支持Q3, Q4, Q5, Q6, Q8量化
 
-### 1.1 未来计划
-
-1. 支持更多backend , 理论上来说，ggml支持以下后端，后续将会慢慢适配，欢迎贡献。
+### 1.1 backend支持
 
 | 后端                                   | 平台                   | 是否支持 |
 |--------------------------------------|----------------------|------|
@@ -32,9 +30,6 @@
 | [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |      |
 | [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |      |
 
-
-4. 提升性能
-5. 修bug
 
 ## 2. 使用
 
@@ -63,7 +58,7 @@ python scripts/convert-pt-to-gguf.py \
 --out_type f32
 ```
 
-### RUN
+### 非流式语音识别 silero-vad + sense voice
 ```bash
 
 git clone https://github.com/lovemefan/SenseVoice.cpp
@@ -111,6 +106,14 @@ sense_voice_pcm_to_feature_with_state: calculate fbank and cmvn takes 7.207 ms
 <|zh|><|NEUTRAL|><|Speech|><|withitn|>欢迎大家来体验达摩院推出的语音识别模型。
 sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
 ```
+### 流式语音识别识别
+
+```bash
+./bin/sense-voice-stream -m /path/gguf-fp16-sense-voice-small.bin
+```
+
+
+
 ## 感谢以下项目
 
 1. 本项目借用并模仿来自[whisper.cpp](https://github.com/ggerganov/ggml/blob/master/examples/whisper/whisper.cpp)

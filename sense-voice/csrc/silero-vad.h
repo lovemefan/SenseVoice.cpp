@@ -63,7 +63,7 @@ SENSEVOICE_API bool silero_vad_encode_internal(sense_voice_context &ctx,
                                                sense_voice_state &state,
                                                std::vector<float> chunk,
                                                const int n_threads,
-                                               const double &speech_prob);
+                                               float &speech_prob);
 
 SENSEVOICE_API double silero_vad_with_state(sense_voice_context &ctx,
                            sense_voice_state &state,

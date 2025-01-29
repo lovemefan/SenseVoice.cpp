@@ -26,7 +26,7 @@ struct sense_voice_stream_params {
     bool debug_mode    = false;
     bool use_vad       = false;
     bool use_itn       = false;
-
+    bool use_prefix   = true;
     std::string language  = "auto";
     std::string model     = "models/ggml-base.en.bin";
     std::string fname_out;
@@ -43,7 +43,8 @@ void sense_voice_stream_usage(int /*argc*/, char ** argv, const sense_voice_stre
     fprintf(stderr, "            --chunk_size        [%-7d] vad chunk size(ms)\n",                                       params.chunk_size);
     fprintf(stderr, "  -mmc      --min-mute-chunks   [%-7d] When consecutive chunks are identified as silence\n",        params.min_mute_chunks);
     fprintf(stderr, "  -mnc      --max-nomute-chunks [%-7d] when the first non-silent chunk is too far away\n",          params.max_nomute_chunks);
-    fprintf(stderr, "            --use_vad           [%-7s] when the first non-silent chunk is too far away\n",          params.use_vad ? "true" : "false");
+    fprintf(stderr, "            --use-vad           [%-7s] when the first non-silent chunk is too far away\n",          params.use_vad ? "true" : "false");
+    fprintf(stderr, "            --use-prefix        [%-7s] use sense voice prefix\n",          params.use_prefix ? "true" : "false");
     fprintf(stderr, "  -c ID,    --capture ID        [%-7d] [Device] capture device ID\n",                               params.capture_id);
     fprintf(stderr, "  -kc,      --keep-context      [%-7s] [IO] keep context between audio chunks\n",                   params.no_context ? "false" : "true");
     fprintf(stderr, "  -l LANG,  --language LANG     [%-7s] [SenseVoice] spoken language\n",                             params.language.c_str());
@@ -76,8 +77,9 @@ static bool get_stream_params(int argc, char ** argv, sense_voice_stream_params 
         else if (arg == "-mmc"  || arg == "--min-mute-chunks")   { params.min_mute_chunks   = std::stoi(argv[++i]); }
         else if (arg == "-mnc"  || arg == "--max-nomute-chunks") { params.max_nomute_chunks = std::stoi(argv[++i]); }
         else if (                  arg == "--use-vad")           { params.use_vad           = true; }
+        else if (                  arg == "--use-prefix")        { params.use_prefix        = true; }
         else if (                  arg == "--chunk-size")        { params.chunk_size        = std::stoi(argv[++i]); }
-        else if (                  arg == "--use-itn")        { params.use_itn        = true; }
+        else if (                  arg == "--use-itn")           { params.use_itn           = true; }
 
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
@@ -208,7 +210,8 @@ int main(int argc, char** argv)
                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                 return 10;
             }
-            sense_voice_print_output(ctx, true, params.use_itn, true);
+
+            sense_voice_print_output(ctx, params.use_prefix, params.use_itn, true);
             // 时间长度太长了直接换行重新开始
             if (R_new_chunk >= max_nomute_step)
             {
@@ -233,13 +236,14 @@ int main(int argc, char** argv)
                     // printf("3333: %d %d %d %d %d\n", L_nomute, R_nomute, L_mute, i, R_this_chunk);
                     pcmf32_tmp.resize(R_nomute - L_nomute);
                     std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_nomute, pcmf32_tmp.begin());
-                    printf("[%.2f-%.2f]", (L_nomute + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0), (R_nomute + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0));
+                    printf("type2 :[%.2f-%.2f - %d ]", idenitified_floats / (SENSE_VOICE_SAMPLE_RATE * 1.0), (R_new_chunk + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0), pcmf32_tmp.size());
                     if (sense_voice_full_parallel(ctx, wparams, pcmf32_tmp, pcmf32_tmp.size(), params.n_processors) != 0) {
                         fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                         return 10;
                     }
-                    sense_voice_print_output(ctx, true, params.use_itn);
-
+                    fprintf(stderr, "print 2\n");
+                    sense_voice_print_output(ctx, params.use_prefix, params.use_itn);
+//                    fflush(stdout);
                     if (!isnomute) L_nomute = -1;
                     else if (R_mute >= 0) L_nomute = R_mute;
                     else L_nomute = i;
@@ -264,7 +268,7 @@ int main(int argc, char** argv)
                             fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                             return 10;
                         }
-                        sense_voice_print_output(ctx, true, params.use_itn);
+                        sense_voice_print_output(ctx, params.use_prefix, params.use_itn);
 
                         if (!isnomute) L_nomute = -1;
                         else if (R_mute >= 0) L_nomute = R_mute;

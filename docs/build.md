@@ -165,7 +165,7 @@ For more information about Ascend NPU in [Ascend Community](https://www.hiascend
 
 Make sure to have the CANN toolkit installed. You can download it from here: [CANN Toolkit](https://www.hiascend.com/developer/download/community/result?module=cann)
 
-Go to `llama.cpp` directory and build using CMake.
+Go to `sensevoice.cpp` directory and build using CMake.
 ```bash
 cmake -B build -DGGML_CANN=on -DCMAKE_BUILD_TYPE=release
 cmake --build build --config release

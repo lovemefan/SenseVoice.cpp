@@ -18,7 +18,7 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 3.	Support Flash attention decoding  
 4.  Support Q3, Q4, Q5, Q6, Q8 quantization.
 
-### 1.1 Future Plans
+### 1.1 Backend Support
 
 
 1.	Support more backends. In theory, ggml supports the following backends, and future adaptations will be gradually made. Contributions are welcome.
@@ -36,9 +36,6 @@ This project is based on the [ggml](https://github.com/ggerganov/ggml) framework
 | [MUSA](./docs/build.md#musa)         | Moore Threads GPU    |              |
 | [hipBLAS](./docs/build.md#hipblas)   | AMD GPU              |              |
 
-
-2. Improve performance.
-3. Fix bugs.
 
 ## 2. Usage
 
@@ -67,7 +64,7 @@ python scripts/convert-pt-to-gguf.py \
 --out_type f32
 ```
 
-### RUN
+### Non-Streaming Speech Recognition (Silero-VAD + SenseVoice)
 ```bash
 
 git clone https://github.com/lovemefan/SenseVoice.cpp
@@ -114,6 +111,11 @@ main: processing audio (88747 samples, 5.54669 sec) , 4 threads, 1 processors, l
 sense_voice_pcm_to_feature_with_state: calculate fbank and cmvn takes 7.207 ms
 <|zh|><|NEUTRAL|><|Speech|><|withitn|>欢迎大家来体验达摩院推出的语音识别模型。
 sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
+```
+
+### Streaming Speech Recognition
+```bash
+./bin/sense-voice-stream -m /path/gguf-fp16-sense-voice-small.bin
 ```
 ## Acknowledgements
 
