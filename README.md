@@ -112,7 +112,7 @@ sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
 ./bin/sense-voice-stream -m /path/gguf-fp16-sense-voice-small.bin
 ```
 
-
+https://github.com/lovemefan/SenseVoice.cpp/releases/download/v1.4.0/sense-voice-straming.mp4
 
 ## 感谢以下项目
 
