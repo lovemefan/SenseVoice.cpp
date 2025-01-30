@@ -26,7 +26,7 @@ struct sense_voice_stream_params {
     bool debug_mode    = false;
     bool use_vad       = false;
     bool use_itn       = false;
-    bool use_prefix   = true;
+    bool use_prefix   = false;
     std::string language  = "auto";
     std::string model     = "models/ggml-base.en.bin";
     std::string fname_out;
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
         if (!params.use_vad) {
             // 识别当前已经识别到的文本恩
             printf("\33[2K\r");
-            printf("%s", std::string(100, ' ').c_str());
+            printf("%s", std::string(50, ' ').c_str());
             printf("\33[2K\r");
             printf("[%.2f-%.2f]", idenitified_floats / (SENSE_VOICE_SAMPLE_RATE * 1.0), (R_new_chunk + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0));
             if (sense_voice_full_parallel(ctx, wparams, pcmf32, R_new_chunk, params.n_processors) != 0) {
