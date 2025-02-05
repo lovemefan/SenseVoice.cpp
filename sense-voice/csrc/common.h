@@ -296,10 +296,11 @@ struct sense_voice_hparams {
 // };
 
 struct sense_voice_segment {
-    int64_t t0;
-    int64_t t1;
-    std::string text;
-    std::vector<int> tokens;
+    size_t t0;                   // 时间区间左端点
+    size_t t1;                   // 时间区间右端点
+    // std::string text;         // tokens对应的文本
+    std::vector<int> tokens;     // 识别后的tokens
+    std::vector<double> samples;  // 具体音频
     // std::vector<float> 
     // bool speaker_turn_next;
 };
@@ -398,6 +399,7 @@ struct sense_voice_state {
     // decode output (2-dimensional array: [n_tokens][n_vocab])
     std::vector<int> ids;
     std::vector<sense_voice_segment> result_all;
+    std::vector<size_t> segmentIDs;
     // std::vector<int> prompt_past;
 
     // work container used to avoid memory allocations

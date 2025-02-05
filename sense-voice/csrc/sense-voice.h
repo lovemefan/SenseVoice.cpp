@@ -24,4 +24,7 @@ int sense_voice_full_parallel(struct sense_voice_context * ctx,
                               int n_processors);
 void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self=false);
 void sense_voice_free_state(struct sense_voice_state * state);
+int sense_voice_batch_full(struct sense_voice_context * ctx, const sense_voice_full_params &params);
+// int sense_voice_batch_pcmf(std::vector<std::vector<double>> &pcmf32, const sense_voice_full_params &params);
+void sense_voice_batch_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self=false);
 #endif//SENSEVOICE_CPP_SENSE_VOICE_H

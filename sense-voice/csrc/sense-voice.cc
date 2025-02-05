@@ -16,9 +16,9 @@
 #define SENSE_VOICE_CHUNK_SIZE 20
 #define SENSE_VOICE_FEATURES_DIM 560
 
-int sense_voice_lang_id(const char * lang) {
+int sense_voice_lang_id(const char *lang) {
     if (!g_lang.count(lang)) {
-        for (const auto & kv : g_lang) {
+        for (const auto &kv: g_lang) {
             if (kv.second.second == lang) {
                 return kv.second.first;
             }
@@ -30,8 +30,8 @@ int sense_voice_lang_id(const char * lang) {
     return g_lang.at(lang).first;
 }
 
-const char * sense_voice_lang_str(int id) {
-    for (const auto & kv : g_lang) {
+const char *sense_voice_lang_str(int id) {
+    for (const auto &kv: g_lang) {
         if (kv.second.first == id) {
             return kv.first.c_str();
         }
@@ -41,7 +41,7 @@ const char * sense_voice_lang_str(int id) {
     return nullptr;
 }
 
-static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_voice_context_params & params) {
+static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_voice_context_params &params) {
     if (!params.use_gpu) {
         return ggml_backend_cpu_buffer_type();
     }
@@ -56,7 +56,7 @@ static ggml_backend_buffer_type_t sense_voice_default_buffer_type(const sense_vo
     return ggml_backend_cpu_buffer_type();
 }
 
-static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params & params) {
+static ggml_backend_t sense_voice_backend_init_gpu(const sense_voice_context_params &params) {
     ggml_backend_t result = nullptr;
 
     if (params.use_gpu) {
@@ -110,7 +110,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
     auto &sense_voice = sctx.model;
     auto &vocab = sctx.vocab;
     auto &hparams = sense_voice.hparams;
-    sense_voice.model_type =  gguf_get_val_str(gguf_ctx, 0);
+    sense_voice.model_type = gguf_get_val_str(gguf_ctx, 0);
     // load hparams
     {
         if (gguf_find_key(gguf_ctx, "general.file_type") != -1) {
@@ -144,7 +144,7 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         // for the big tensors, we have the option to store the data in 16-bit
         // floats or quantized in order to save memory and also to speed up the
         // computation
-        sctx.wtype = ggml_ftype_to_ggml_type((ggml_ftype)(sense_voice.hparams.ftype));
+        sctx.wtype = ggml_ftype_to_ggml_type((ggml_ftype) (sense_voice.hparams.ftype));
         if (sctx.wtype == GGML_TYPE_COUNT) {
             SENSE_VOICE_LOG_INFO("%s: invalid model (bad ftype value %d)\n", __func__,
                                  sense_voice.hparams.ftype);
@@ -153,13 +153,13 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
         SENSE_VOICE_LOG_INFO("%s: n_vocab = %d\n", __func__, hparams.n_vocab);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_hidden_state = %d\n", __func__,
-                            hparams.n_encoder_hidden_state);
+                             hparams.n_encoder_hidden_state);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_linear_units = %d\n", __func__,
-                            hparams.n_encoder_linear_units);
+                             hparams.n_encoder_linear_units);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_attention_heads  = %d\n", __func__,
-                            hparams.n_encoder_attention_heads);
+                             hparams.n_encoder_attention_heads);
         SENSE_VOICE_LOG_INFO("%s: n_encoder_layers = %d\n", __func__,
-                            hparams.n_encoder_layers);
+                             hparams.n_encoder_layers);
 
         if (sense_voice.model_type == "SenseVoiceLarge") {
             SENSE_VOICE_LOG_INFO("%s: n_decoder_hidden_state  = %d\n", __func__,
@@ -174,7 +174,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         SENSE_VOICE_LOG_INFO("%s: n_mels  = %d\n", __func__, hparams.n_mels);
         SENSE_VOICE_LOG_INFO("%s: ftype  = %d\n", __func__,
                              sense_voice.hparams.ftype);
-
     }
 
     // load vocab
@@ -230,11 +229,11 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
             sense_voice.n_loaded = 0;
 
             // model tensor sizing
-            size_t buffer_size = 32*1024; // need some extra room??
+            size_t buffer_size = 32 * 1024;// need some extra room??
 
             for (int i = 0; i < n_tensors; ++i) {
-                const char * name = gguf_get_tensor_name(gguf_ctx, i);
-                struct ggml_tensor * cur = ggml_get_tensor(sctx.model.ctx, name);
+                const char *name = gguf_get_tensor_name(gguf_ctx, i);
+                struct ggml_tensor *cur = ggml_get_tensor(sctx.model.ctx, name);
                 size_t tensor_size = ggml_nbytes(cur);
                 buffer_size += tensor_size;
             }
@@ -295,7 +294,6 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         }
         ggml_backend_buffer_set_usage(sctx.model.buffer, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         gguf_free(gguf_ctx);
-
     }
 
     {
@@ -306,8 +304,8 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
         sense_voice.vad_model = vad_model.model;
         sense_voice.model = new struct sense_voice;
         sense_voice.model->encoder = new struct sense_voice_encoder;
-        sense_voice.model->encoder->encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_encoder_layers - 1);
-        sense_voice.model->encoder->tp_encoders_layer =  std::vector<sense_voice_layer_encoder>(hparams.n_tp_encoder_layers);
+        sense_voice.model->encoder->encoders_layer = std::vector<sense_voice_layer_encoder>(hparams.n_encoder_layers - 1);
+        sense_voice.model->encoder->tp_encoders_layer = std::vector<sense_voice_layer_encoder>(hparams.n_tp_encoder_layers);
 
         // load vad model
         {
@@ -342,20 +340,17 @@ bool sense_voice_model_load(const char *path_model, sense_voice_context &sctx) {
 
             sense_voice.model->ctc_out_linear_weight = sense_voice.tensors["ctc.ctc_lo.weight"];
             sense_voice.model->ctc_out_linear_bias = sense_voice.tensors["ctc.ctc_lo.bias"];
-
         }
     }
 
 
     // decoder layers
-    if(sense_voice.model_type == "SenseVoiceLarge")
-    {
-
+    if (sense_voice.model_type == "SenseVoiceLarge") {
     }
 
     sctx.t_load_ms = ggml_time_ms() - t_start_ms;
     SENSE_VOICE_LOG_INFO("%s: load %s takes %f second \n", __func__, sense_voice.model_type.c_str(),
-                        sctx.t_load_ms * 1.0 / 1000);
+                         sctx.t_load_ms * 1.0 / 1000);
     return true;
 }
 
@@ -383,9 +378,9 @@ struct sense_voice_context *sense_voice_init_with_params_no_state(
 }
 
 
-struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_state(const char * path_model, struct sense_voice_context_params params) {
+struct sense_voice_context *sense_voice_small_init_from_file_with_params_no_state(const char *path_model, struct sense_voice_context_params params) {
     SENSE_VOICE_LOG_INFO("%s: loading model from '%s'\n", __func__, path_model);
-    
+
 
     auto ctx = sense_voice_init_with_params_no_state(path_model, params);
 
@@ -399,7 +394,7 @@ struct sense_voice_context * sense_voice_small_init_from_file_with_params_no_sta
 static std::vector<ggml_backend_t> sense_voice_backend_init(
         const sense_voice_context_params &params) {
     std::vector<ggml_backend_t> result;
-    
+
     ggml_backend_t backend_gpu = sense_voice_backend_init_gpu(params);
 
     if (backend_gpu) {
@@ -425,19 +420,19 @@ static std::vector<ggml_backend_t> sense_voice_backend_init(
 }
 
 static bool sense_voice_kv_cache_init(
-        struct sense_voice_kv_cache & cache,
-        ggml_backend_t   backend,
-        ggml_type   wtype,
-        int64_t   n_text_state,
-        int64_t   n_text_layer,
-        int   n_ctx) {
-    const int64_t n_mem      = n_text_layer*n_ctx;
-    const int64_t n_elements = n_text_state*n_mem;
+        struct sense_voice_kv_cache &cache,
+        ggml_backend_t backend,
+        ggml_type wtype,
+        int64_t n_text_state,
+        int64_t n_text_layer,
+        int n_ctx) {
+    const int64_t n_mem = n_text_layer * n_ctx;
+    const int64_t n_elements = n_text_state * n_mem;
 
     struct ggml_init_params params = {
-            /*.mem_size   =*/ 2*ggml_tensor_overhead(),
-            /*.mem_buffer =*/ nullptr,
-            /*.no_alloc   =*/ true,
+            /*.mem_size   =*/2 * ggml_tensor_overhead(),
+            /*.mem_buffer =*/nullptr,
+            /*.no_alloc   =*/true,
     };
 
     cache.head = 0;
@@ -467,7 +462,7 @@ static bool sense_voice_kv_cache_init(
     return true;
 }
 
-static void sense_voice_kv_cache_free(struct sense_voice_kv_cache & cache) {
+static void sense_voice_kv_cache_free(struct sense_voice_kv_cache &cache) {
     ggml_free(cache.ctx);
     ggml_backend_buffer_free(cache.buffer);
     cache.ctx = nullptr;
@@ -478,8 +473,8 @@ static void sense_voice_kv_cache_free(struct sense_voice_kv_cache & cache) {
 static bool sense_voice_sched_graph_init(
         struct sense_voice_sched &allocr, std::vector<ggml_backend_t> backends,
         std::function<struct ggml_cgraph *()> &&get_graph) {
-    auto & sched = allocr.sched;
-    auto & meta  = allocr.meta;
+    auto &sched = allocr.sched;
+    auto &meta = allocr.meta;
 
     sched = ggml_backend_sched_new(backends.data(), nullptr, backends.size(), SENSE_VOICE_MAX_NODES, false);
 
@@ -498,7 +493,7 @@ static bool sense_voice_sched_graph_init(
     return true;
 }
 
-void sense_voice_free_state(struct sense_voice_state * state) {
+void sense_voice_free_state(struct sense_voice_state *state) {
     if (state) {
         sense_voice_kv_cache_free(state->kv_pad);
         {
@@ -534,14 +529,14 @@ void sense_voice_free_state(struct sense_voice_state * state) {
         ggml_backend_sched_free(state->sched_encode.sched);
         ggml_backend_sched_free(state->sched_decode.sched);
 
-        for (auto & backend : state->backends) {
+        for (auto &backend: state->backends) {
             ggml_backend_free(backend);
         }
         delete state;
     }
 }
 
-static size_t sense_voice_sched_size(struct sense_voice_sched & sched) {
+static size_t sense_voice_sched_size(struct sense_voice_sched &sched) {
     size_t size = sched.meta.size();
     for (int i = 0; i < ggml_backend_sched_get_n_backends(sched.sched); ++i) {
         ggml_backend_t backend = ggml_backend_sched_get_backend(sched.sched, i);
@@ -561,9 +556,9 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     }
 
     if (!sense_voice_kv_cache_init(state->kv_pad, state->backends[0], ctx->itype,
-                               ctx->model.hparams.n_encoder_hidden_state,
-                               1,
-                               GGML_PAD(ctx->model.hparams.n_audio_ctx, 256))) {
+                                   ctx->model.hparams.n_encoder_hidden_state,
+                                   1,
+                                   GGML_PAD(ctx->model.hparams.n_audio_ctx, 256))) {
         SENSE_VOICE_LOG_ERROR("%s: sense_voice_kv_cache_init() failed for self-attention cache\n", __func__);
         sense_voice_free_state(state);
         return nullptr;
@@ -577,7 +572,7 @@ struct sense_voice_state *sense_voice_init_state(sense_voice_context *ctx) {
     // set input
     {
         // init features
-        state->feature.n_len =SENSE_VOICE_CHUNK_SIZE;
+        state->feature.n_len = SENSE_VOICE_CHUNK_SIZE;
         state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
         state->feature.tensor = ggml_new_tensor_2d(state->feature.ctx,
                                                    GGML_TYPE_F32,
@@ -656,24 +651,24 @@ static std::string to_timestamp(int64_t t, bool comma = false) {
     return std::string(buf);
 }
 
-struct sense_voice_context * sense_voice_small_init_from_file_with_params(const char * path_model, struct sense_voice_context_params params) {
-    sense_voice_context * ctx = sense_voice_small_init_from_file_with_params_no_state(path_model, params);
+struct sense_voice_context *sense_voice_small_init_from_file_with_params(const char *path_model, struct sense_voice_context_params params) {
+    sense_voice_context *ctx = sense_voice_small_init_from_file_with_params_no_state(path_model, params);
     if (!ctx) {
         return nullptr;
     }
 
     ctx->state = sense_voice_init_state(ctx);
-//    if (!ctx->state) {
-//        sense_voice_small_free(ctx);
-//        return nullptr;
-//    }
+    //    if (!ctx->state) {
+    //        sense_voice_small_free(ctx);
+    //        return nullptr;
+    //    }
 
     return ctx;
 }
 
 
-int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
-                                          struct sense_voice_state * state,
+int sense_voice_pcm_to_feature_with_state(struct sense_voice_context *ctx,
+                                          struct sense_voice_state *state,
                                           std::vector<double> &pcmf32,
                                           bool debug,
                                           int n_threads) {
@@ -711,20 +706,19 @@ int sense_voice_pcm_to_feature_with_state(struct sense_voice_context * ctx,
         ggml_backend_tensor_set(feature, state->feature.data.data(), 0,
                                 ggml_nbytes(feature));
 
-//        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
+        //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
     }
     SENSE_VOICE_LOG_DEBUG("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
-                         state->t_feature_us / 1000.0);
+                          state->t_feature_us / 1000.0);
     return 0;
 }
 
-
 int sense_voice_full_with_state(
-        struct sense_voice_context * ctx,
-        struct sense_voice_state * state,
+        struct sense_voice_context *ctx,
+        struct sense_voice_state *state,
         struct sense_voice_full_params params,
         std::vector<double> pcmf32,
-        int   n_samples) {
+        int n_samples) {
     // compute features (fbank + cmvn)
     if (n_samples > 0) {
         sense_voice_pcm_to_feature_with_state(ctx, state, pcmf32, params.debug_mode, params.n_threads);
@@ -733,12 +727,10 @@ int sense_voice_full_with_state(
     int n_decoders = 1;
 
     switch (params.strategy) {
-        case SENSE_VOICE_SAMPLING_GREEDY:
-        {
+        case SENSE_VOICE_SAMPLING_GREEDY: {
             n_decoders = params.greedy.best_of;
         } break;
-        case SENSE_VOICE_SAMPLING_BEAM_SEARCH:
-        {
+        case SENSE_VOICE_SAMPLING_BEAM_SEARCH: {
             n_decoders = std::max(params.greedy.best_of, params.beam_search.beam_size);
         } break;
     };
@@ -760,39 +752,178 @@ int sense_voice_full_with_state(
         SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
         return -6;
     }
-//
-//
-//    // encode audio features starting at offset seek
+    // encode audio features starting at offset seek
     if (!sense_voice_decode_internal(*ctx, *state, params.n_threads)) {
         SENSE_VOICE_LOG_ERROR("%s: failed to decode\n", __func__);
         return -6;
     }
 
     SENSE_VOICE_LOG_DEBUG("\n%s: decoder audio use %f s, rtf is %f. \n\n",
-                         __func__,
-                         (state->t_encode_us + state->t_decode_us) / 1e6,
-                         (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
+                          __func__,
+                          (state->t_encode_us + state->t_decode_us) / 1e6,
+                          (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
 
     return 0;
 }
 
-int sense_voice_full_parallel(struct sense_voice_context * ctx,
+int sense_voice_full_parallel(struct sense_voice_context *ctx,
                               sense_voice_full_params &params,
                               std::vector<double> &pcmf32,
                               int n_samples,
-                              int n_processors){
+                              int n_processors) {
     return sense_voice_full_with_state(ctx, ctx->state, params, pcmf32, n_samples);
 }
 
-void sense_voice_print_output(struct sense_voice_context * ctx, bool need_prefix, bool use_itn, bool refresh_self)
-{
-    for(int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++)
-    {
+void sense_voice_print_output(struct sense_voice_context *ctx, bool need_prefix, bool use_itn, bool refresh_self) {
+    for (int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++) {
         int id = ctx->state->ids[i];
         if (i > 0 && ctx->state->ids[i - 1] == ctx->state->ids[i])
             continue;
         if (id)
             printf("%s", ctx->vocab.id_to_token[id].c_str());
     }
-    if(!refresh_self) printf("\n");
+    if (!refresh_self) printf("\n");
+}
+
+int sense_voice_batch_pcm_to_feature_with_state(struct sense_voice_context *ctx,
+                                                struct sense_voice_state *state,
+                                                const std::vector<std::vector<double>> &pcmf32s,// Changed to 2D vector
+                                                bool debug,
+                                                int n_threads) {
+    const int64_t t_start_us = ggml_time_us();
+    struct sense_voice_cmvn cmvn;
+    cmvn.cmvn_means = std::vector<float>(CMVN_MEANS, CMVN_MEANS + cmvn_length);
+    cmvn.cmvn_vars = std::vector<float>(CMVN_VARS, CMVN_VARS + cmvn_length);
+    state->feature.input_data.clear();
+    for (const std::vector<double> &pcmf32: pcmf32s) {
+        fbank_lfr_cmvn_feature(pcmf32, pcmf32.size(),
+                               state->feature.frame_size,
+                               state->feature.frame_step,
+                               state->feature.n_mel,
+                               n_threads, true, cmvn, state->feature);
+        state->feature.input_data.insert(state->feature.input_data.end(), state->feature.data.begin(), state->feature.data.end());
+    }
+
+    state->t_feature_us = ggml_time_us() - t_start_us;
+
+    // set input
+    {
+        // init features
+        state->feature.n_len = state->feature.data.size() / (state->feature.n_mel * state->feature.lfr_m);
+        state->feature.ctx = ggml_init({ggml_tensor_overhead(), nullptr, true});
+        state->feature.tensor = ggml_new_tensor_3d(state->feature.ctx,
+                                                   GGML_TYPE_F32,
+                                                   state->feature.lfr_m * state->feature.n_mel,
+                                                   state->feature.n_len,
+                                                   pcmf32s.size());// Batch size
+        state->feature.buffer = ggml_backend_alloc_buffer(state->backends[0],
+                                                          ggml_nbytes(state->feature.tensor) + ggml_backend_get_alignment(state->backends[0]));
+        auto alloc = ggml_tallocr_new(state->feature.buffer);
+        ggml_tallocr_alloc(&alloc, state->feature.tensor);
+
+        auto &feature = state->feature.tensor;
+
+        assert(state->feature.n_mel == ctx->model.hparams.n_mels);
+
+        ggml_backend_tensor_set(feature, state->feature.input_data.data(), 0,
+                                ggml_nbytes(feature));
+
+        //        state->feature.tensor = ggml_transpose(state->feature.ctx, state->feature.tensor);
+    }
+    SENSE_VOICE_LOG_DEBUG("%s: calculate fbank and cmvn takes %.3f ms\n", __func__,
+                          state->t_feature_us / 1000.0);
+    return 0;
+}
+
+int sense_voice_batch_full(struct sense_voice_context *ctx, const sense_voice_full_params &params) {
+    // TODO 二期工程：直接在ctx上改动大小是否可行？
+    // size_t max_len = 0;
+    // for(int i = 0; i < ctx->state->result_all.size(); i++) {
+    //     max_len = std::max(ctx->state->result_all[i].samples.size(), max_len);
+    // }
+    // for(int i = 0; i < ctx->state->result_all.size(); i++) {
+    //     if(max_len > ctx->state->result_all.size()) {
+    //         ctx->state->result_all[i].samples.insert(ctx->state->result_all[i].samples.end(), max_len - ctx->state->result_all[i].samples.size(), 0);
+    //     }
+    // }
+    std::vector<std::vector<double>> pcmf32s;
+    {
+        std::vector<double> pcmf32_tmp;
+        size_t max_len = 0;
+        // 注意内存效率优化，不要频繁移动
+        for (size_t segmentID: ctx->state->segmentIDs)
+            max_len = std::max(max_len, ctx->state->result_all[segmentID].samples.size());
+        pcmf32_tmp.resize(max_len);
+        for (size_t segmentID: ctx->state->segmentIDs) {
+            std::copy(ctx->state->result_all[segmentID].samples.begin(), ctx->state->result_all[segmentID].samples.end(), pcmf32_tmp.begin());
+            pcmf32s.push_back(pcmf32_tmp);
+            pcmf32_tmp.assign(pcmf32_tmp.size(), 0);
+        }
+    }
+    sense_voice_state *state = ctx->state;
+    // compute features (fbank + cmvn)
+    sense_voice_batch_pcm_to_feature_with_state(ctx, state, pcmf32s, params.debug_mode, params.n_threads);
+    // initialize the decoders
+    int n_decoders = 1;
+
+    switch (params.strategy) {
+        case SENSE_VOICE_SAMPLING_GREEDY: {
+            n_decoders = params.greedy.best_of;
+        } break;
+        case SENSE_VOICE_SAMPLING_BEAM_SEARCH: {
+            n_decoders = std::max(params.greedy.best_of, params.beam_search.beam_size);
+        } break;
+    };
+
+    if (n_decoders > SENSE_VOICE_MAX_DECODERS) {
+        SENSE_VOICE_LOG_ERROR("%s: too many decoders requested (%d), max = %d\n", __func__, n_decoders, SENSE_VOICE_MAX_DECODERS);
+        return -4;
+    }
+
+    // overwrite audio_ctx, max allowed is hparams.n_audio_ctx
+    if (params.audio_ctx > ctx->model.hparams.n_audio_ctx) {
+        SENSE_VOICE_LOG_ERROR("%s: audio_ctx is larger than the maximum allowed (%d > %d)\n", __func__, params.audio_ctx, ctx->model.hparams.n_audio_ctx);
+        return -5;
+    }
+    state->exp_n_audio_ctx = params.audio_ctx;
+
+    // encode audio features starting at offset seek
+    if (!sense_voice_encode_internal(*ctx, *state, params.n_threads)) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to encode\n", __func__);
+        return -6;
+    }
+    //
+    //
+    //    // encode audio features starting at offset seek
+    if (!sense_voice_decode_internal(*ctx, *state, params.n_threads)) {
+        SENSE_VOICE_LOG_ERROR("%s: failed to decode\n", __func__);
+        return -6;
+    }
+
+    SENSE_VOICE_LOG_DEBUG("\n%s: decoder audio use %f s, rtf is %f. \n\n",
+                          __func__,
+                          (state->t_encode_us + state->t_decode_us) / 1e6,
+                          (state->t_encode_us + state->t_decode_us) / (1e6 * state->duration));
+
+    return 0;
+}
+
+int sense_voice_batch_pcmf(std::vector<std::vector<double>> &pcmf32, const sense_voice_full_params &params) {
+    // 模拟一下生成sense_voice_context即可，直接构造一套segmentIDs，就可以直接送进去
+    // return sense_voice_batch_full(ctx, ctx->state, params, pcmf32);
+    return 0;
+}
+
+void sense_voice_batch_print_output(struct sense_voice_context *ctx, bool need_prefix, bool use_itn, bool refresh_self) {
+    for (size_t i = 0; i < ctx->state->segmentIDs.size(); i++) {
+        const int resultID = ctx->state->segmentIDs[i];
+        const sense_voice_segment &result = ctx->state->result_all[resultID];
+        for (size_t j = (need_prefix ? 0 : 4); j < result.tokens.size(); j++) {
+            int id = result.tokens[j];
+            if (!id || (j > 0 && result.tokens[j - 1] == id))
+                continue;
+            printf("%s", ctx->vocab.id_to_token[id].c_str());
+        }
+        if (!refresh_self) printf("\n");
+    }
 }

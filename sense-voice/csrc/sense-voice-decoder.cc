@@ -116,20 +116,21 @@ bool sense_voice_decode_internal(sense_voice_context &ctx,
         }
         {
             ggml_tensor *argmax_logit = ggml_graph_node(gf, ggml_graph_n_nodes(gf) - 1);
-            state.ids.resize(argmax_logit->ne[0]);
-            ggml_backend_tensor_get(argmax_logit, state.ids.data(), 0, sizeof(int) * argmax_logit->ne[0]);
-
-            const int32_t n_logits = argmax_logit->ne[0] * argmax_logit->ne[1];
-            // Get the tensor data into a temporary buffer
-            std::vector<int> temp_buffer(n_logits);
-            ggml_backend_tensor_get(argmax_logit, temp_buffer.data(), 0, sizeof(int) * n_logits);
-            // TODO 临时处理，需要清理
-            state.result_all.resize(argmax_logit->ne[1]);
-            // Copy data into 2D array
-            for(int32_t i = 0; i < argmax_logit->ne[1]; i++)
-            {
-                int posL = i * argmax_logit->ne[0];
-                state.result_all[i].tokens = std::vector<int>(temp_buffer.begin() + posL, temp_buffer.begin() + posL + argmax_logit->ne[0]);
+            // TODO 临时处理，建议讨论后取其一
+            if(state.result_all.empty()) {
+                state.ids.resize(argmax_logit->ne[0]);
+                ggml_backend_tensor_get(argmax_logit, state.ids.data(), 0, sizeof(int) * argmax_logit->ne[0]);
+            }
+            else {
+                const int32_t n_logits = argmax_logit->ne[0] * argmax_logit->ne[1];
+                // Get the tensor data into a temporary buffer
+                std::vector<int> temp_buffer(n_logits);
+                ggml_backend_tensor_get(argmax_logit, temp_buffer.data(), 0, sizeof(int) * n_logits);
+                for(int32_t i = 0; i < argmax_logit->ne[1]; i++)
+                {
+                    int posL = i * argmax_logit->ne[0];
+                    state.result_all[state.segmentIDs[i]].tokens = std::vector<int>(temp_buffer.begin() + posL, temp_buffer.begin() + posL + argmax_logit->ne[0]);
+                }
             }
         }
 
