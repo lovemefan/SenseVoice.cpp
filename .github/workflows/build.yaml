@@ -27,7 +27,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential git cmake
+            apt install -y build-essential git cmake libsdl2-dev
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
@@ -76,7 +76,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential cmake git
+            apt install -y build-essential libsdl2-dev cmake git
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
@@ -109,7 +109,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y clang build-essential cmake git
+            apt install -y clang build-essential libsdl2-dev cmake git
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
@@ -139,7 +139,7 @@ jobs:
             -w /workspace ${{ env.ubuntu_image }} /bin/sh -c '
             set -e
             apt update
-            apt install -y build-essential cmake git
+            apt install -y build-essential libsdl2-dev cmake git
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
