@@ -478,7 +478,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+        with:
+          submodules: true
+          fetch-depth: 0
       - name: Dependencies
         run: |
           yum update -y
@@ -486,7 +488,9 @@ jobs:
 
       - name: Build
         run: |
-          cd /__w/SenseVoice.cpp/SenseVoice.cpp && git submodule sync && git submodule update --init --recursive
+          cd $GITHUB_WORKSPACE
+          git submodule sync
+          git submodule update --init --recursive
           export LD_LIBRARY_PATH=${ASCEND_TOOLKIT_HOME}/lib64:${ASCEND_TOOLKIT_HOME}/$(uname -m)-linux/devlib/:${LD_LIBRARY_PATH}
           cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
