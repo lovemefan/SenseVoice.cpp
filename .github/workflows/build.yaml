@@ -31,7 +31,7 @@ jobs:
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
-            cmake .
+            cmake -DGGML_NATIVE=OFF . 
             make'
 
   macOS-latest:
@@ -80,7 +80,7 @@ jobs:
             git config --global --add safe.directory /workspace
             git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
             git submodule sync && git submodule update --init --recursive
-            cmake .  -DCMAKE_BUILD_TYPE=${{ matrix.build }}
+            cmake . -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=${{ matrix.build }}
             make
             ctest -L gh --output-on-failure'
 
