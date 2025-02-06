@@ -482,7 +482,9 @@ jobs:
       - name: Dependencies
         run: |
           yum update -y
-          yum install -y git gcc gcc-c++ make cmake unzip sudo
+          yum -y install epel-release
+          yum update -y
+          yum install -y git gcc gcc-c++ make cmake unzip sudo passwd screen
 
       - name: Start SSH via ngrok
         uses: P3TERX/ssh2actions@main
