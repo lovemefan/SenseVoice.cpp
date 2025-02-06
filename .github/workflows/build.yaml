@@ -482,8 +482,6 @@ jobs:
       - name: Dependencies
         run: |
           yum update -y
-          yum -y install epel-release
-          yum update -y
           yum install -y git gcc gcc-c++ make cmake unzip sudo passwd screen
 
       - name: Start SSH via ngrok
