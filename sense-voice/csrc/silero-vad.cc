@@ -199,4 +199,5 @@ bool silero_vad_encode_internal(sense_voice_context &ctx,
         }
         ggml_backend_tensor_get(ggml_graph_get_tensor(gf, "logit"), &speech_prob, 0, sizeof(speech_prob));
     }
+    return true;
 }
