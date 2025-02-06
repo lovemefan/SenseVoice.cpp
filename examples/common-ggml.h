@@ -3,9 +3,8 @@
 //
 
 #pragma once
-
-#include "ggml.h"
-
+#include <gguf.h>
+#include <ggml.h>
 #include <fstream>
 #include <vector>
 #include <cstring>

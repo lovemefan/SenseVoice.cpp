@@ -10,7 +10,8 @@
 #include <map>
 #include <set>
 #include <ggml-cpu.h>
-
+#include <ggml-cpp.h>
+#include <gguf.h>
 #include "sense-voice-frontend.h"
 
 

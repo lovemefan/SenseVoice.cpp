@@ -3,6 +3,7 @@
 //
 
 #include "common-ggml.h"
+#include <gguf.h>
 #include <mutex>
 #include <climits>
 #include <stdarg.h>
@@ -169,9 +170,6 @@ bool sense_voice_ggml_quantize0(
         case GGML_FTYPE_MOSTLY_IQ4_XS:
         case GGML_FTYPE_MOSTLY_IQ1_M:
         case GGML_FTYPE_MOSTLY_BF16:
-        case GGML_FTYPE_MOSTLY_Q4_0_4_4:
-        case GGML_FTYPE_MOSTLY_Q4_0_4_8:
-        case GGML_FTYPE_MOSTLY_Q4_0_8_8:
         {
             fprintf(stderr, "%s: invalid model type %d\n", __func__, ftype);
             return false;
@@ -338,12 +336,7 @@ bool sense_voice_ggml_quantize0(
             }
 
             int chunk_size_multiplier = 1;
-            if (new_type == GGML_TYPE_Q4_0_4_4 || new_type == GGML_TYPE_Q4_0_4_8 || new_type == GGML_TYPE_Q4_0_8_8) {
-                if ((new_type == GGML_TYPE_Q4_0_8_8) && (tensor->ne[1] % 8 != 0)) new_type = GGML_TYPE_Q4_0;
-                else if (tensor->ne[1] % 4 != 0) new_type = GGML_TYPE_Q4_0;
-                if (new_type == GGML_TYPE_Q4_0_8_8) chunk_size_multiplier = 8;
-                else if (new_type == GGML_TYPE_Q4_0_4_4 || new_type == GGML_TYPE_Q4_0_4_8) chunk_size_multiplier = 4;
-            }
+
 
             printf("converting to %s .. ", ggml_type_name(new_type));
             fflush(stdout);
@@ -380,7 +373,7 @@ bool sense_voice_ggml_quantize0(
 
         // update the gguf meta data as we go
         gguf_set_tensor_type(ctx_out, name.c_str(), new_type);
-        gguf_set_tensor_data(ctx_out, name.c_str(), new_data, new_size);
+        gguf_set_tensor_data(ctx_out, name.c_str(), new_data);
 
         // write tensor data + padding
         fout.write((const char *) new_data, new_size);
