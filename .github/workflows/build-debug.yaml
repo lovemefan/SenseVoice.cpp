@@ -31,7 +31,13 @@ jobs:
       - name: Dependencies
         run: |
           yum update -y
-          yum install -y git gcc gcc-c++ make cmake
+          yum install -y git gcc gcc-c++ make cmake tmate
+
+      - name: Enable debug logging
+        if: ${{ inputs.debug_enabled == true }}
+        run: |
+          echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
+          echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
