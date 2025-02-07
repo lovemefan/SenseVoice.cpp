@@ -115,6 +115,7 @@ sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
 
 ### Streaming Speech Recognition
 ```bash
+sudo apt install libsdl2-dev
 ./bin/sense-voice-stream -m /path/gguf-fp16-sense-voice-small.bin
 ```
 ## Acknowledgements
