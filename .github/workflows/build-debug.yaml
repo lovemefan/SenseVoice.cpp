@@ -40,4 +40,4 @@ jobs:
           echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
       - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+        uses: lovemefan/action-tmate@v3
