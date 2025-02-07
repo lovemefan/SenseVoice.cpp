@@ -176,12 +176,19 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                 struct ggml_tensor * a = layer.e_attn_fsmn_w;
                 struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
 
-                struct ggml_tensor *im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1], b->ne[2] * b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
-
+                struct ggml_tensor *im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1] * b->ne[2], b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
                 // new_a [n_state, 1, kernel_size], im2col  [n_state, length, kernel_size]
-                // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [n_state, length , 1]
+                // result ->  [n_state, length, kernel_size] @ [n_state, 1, kernel_size].T = [1, length , kernel_size]
+                // im2col = ggml_reshape_4d(ctx0, im2col, im2col->ne[0], im2col->ne[1], b->ne[1], b->ne[2] * b->ne[3]);
                 struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
-                fsmn_memory = ggml_reshape_3d(ctx0, result, im2col->ne[1], im2col->ne[2], n_batch);
+                // if(n_batch > 1){
+                //     printf("n_batch: %d\n", n_batch);
+                //     printf("a: %d %d %d %d\n", a->ne[0], a->ne[1], a->ne[2], a->ne[3]);
+                //     printf("b: %d %d %d %d\n", b->ne[0], b->ne[1], b->ne[2], b->ne[3]);
+                //     printf("im2col: %d %d %d %d\n", im2col->ne[0], im2col->ne[1], im2col->ne[2], im2col->ne[3]);
+                //     printf("result: %d %d %d %d %d\n", result->ne[0], result->ne[1], result->ne[2], result->ne[3], ggml_nelements(result));
+                // }
+                fsmn_memory = ggml_reshape_3d(ctx0, result, im2col->ne[1], b->ne[1], b->ne[2]);  // b->ne[2] == batch
             }
             fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));
             fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
@@ -290,11 +297,12 @@ struct ggml_cgraph *sense_voice_build_graph_encoder(sense_voice_context &pctx,
     ggml_set_name(feature, "feats");
     ggml_set_input(feature);
 
-    struct ggml_tensor *embedding = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, 4, feature->ne[2]);
+    struct ggml_tensor *embedding = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, 4, 1);
     ggml_set_name(embedding, "embedding");
     ggml_set_input(embedding);
 
     embedding = ggml_get_rows(ctx0, model->embedding, embedding);
+    embedding = ggml_repeat(ctx0, embedding, ggml_new_tensor_3d(ctx0, GGML_TYPE_I32, embedding->ne[0], embedding->ne[1], feature->ne[2]));
 
     struct ggml_tensor *cur = ggml_concat(ctx0, embedding, feature, 1);
 
@@ -393,7 +401,7 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
             // p_{k,j} = cos(k/10000^(2j/d))  d/2 < j < d
 
             for (int b = 0; b < n_batch; b++)
-        	for (int k = 1; k <= n_len; k++) {
+            for (int k = 1; k <= n_len; k++) {
                 for (int i = 0; i < dim / 2; i++) {
                 _position[b * n_len * dim + (k - 1) * dim + i] = sinf(k * pow(10000, -2.0 * i / dim));
                 _position[b * n_len * dim + (k - 1) * dim + i + dim / 2] =
@@ -406,18 +414,8 @@ bool sense_voice_encode_internal(sense_voice_context &ctx,
                     position, _position.data(), 0,
                     ggml_nelements(position) * sizeof(float));
 
-            std::vector<int> _embedding;
-            _embedding.resize(4 * n_batch);
-            // language, event, emo, textnorm
-            for (int b = 0; b < n_batch; b++) {
-                _embedding[b * 4 + 0] = ctx.language_id;
-                _embedding[b * 4 + 1] = 1;
-                _embedding[b * 4 + 2] = 2;
-                _embedding[b * 4 + 3] = ctx.params.use_itn ? 14 : 15;
-            }
-
-            ggml_backend_tensor_set(embedding, _embedding.data(), 0, _embedding.size()*sizeof(int));
-
+            int _embedding[4] = {ctx.language_id, 1, 2, ctx.params.use_itn ? 14 : 15};
+            ggml_backend_tensor_set(embedding, _embedding, 0, 4*sizeof(int));
         }
 //        ggml_graph_dump_dot(gf, NULL, "sense-voice.dot");
 //        ggml_backend_sched_set_eval_callback(sched, ctx.params.cb_eval, ctx.params.cb_eval_user_data);

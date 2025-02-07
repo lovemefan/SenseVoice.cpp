@@ -4,7 +4,7 @@
 
 #include "sense-voice-decoder.h"
 
-#define SENSEVOICE_DECODER_MAX_NODES 8
+#define SENSEVOICE_DECODER_MAX_NODES 16
 
 // faster matrix multiplications for tensors that do not have dimension 0 divisible by "pad"
 // the idea is to represent the original matrix multiplication:
@@ -75,10 +75,24 @@ struct ggml_cgraph *sense_voice_build_graph_ctc_decoder(sense_voice_context &ctx
         cur = ggml_reshape_3d(ctx0, cur, cur->ne[0], encoder_out->ne[1], encoder_out->ne[2]);
     }
     ggml_tensor * probs = ggml_soft_max(ctx0, cur);
-    ggml_tensor * argmax_logit = ggml_argmax(ctx0, probs);
+    
+    // Process each batch separately for argmax
+    ggml_tensor * argmax_logits = nullptr;
+    for (int64_t b = 0; b < probs->ne[2]; b++) {
+        // View for current batch
+        ggml_tensor * batch_view = ggml_view_2d(ctx0, probs, probs->ne[0], probs->ne[1], probs->nb[1], b * probs->nb[2]);   
+        ggml_tensor * batch_argmax = ggml_argmax(ctx0, batch_view);
+        if (argmax_logits == nullptr) {
+            // For first batch, create output tensor
+            argmax_logits = batch_argmax;
+        } else {
+            // Concatenate results
+            argmax_logits = ggml_concat(ctx0, argmax_logits, batch_argmax, 1);
+        }
+    }
     ggml_set_output(probs);
-    ggml_set_output(argmax_logit);
-    ggml_build_forward_expand(gf, argmax_logit);
+    ggml_set_output(argmax_logits);
+    ggml_build_forward_expand(gf, argmax_logits);
     ggml_free(ctx0);
     return gf;
 }
