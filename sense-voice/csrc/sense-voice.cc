@@ -918,6 +918,7 @@ void sense_voice_batch_print_output(struct sense_voice_context *ctx, bool need_p
     for (size_t i = 0; i < ctx->state->segmentIDs.size(); i++) {
         const int resultID = ctx->state->segmentIDs[i];
         const sense_voice_segment &result = ctx->state->result_all[resultID];
+        printf("[%.2f-%.2f]", result.t0 * 1.0 / SENSE_VOICE_SAMPLE_RATE, result.t1 * 1.0 / SENSE_VOICE_SAMPLE_RATE);
         for (size_t j = (need_prefix ? 0 : 4); j < result.tokens.size(); j++) {
             int id = result.tokens[j];
             if (!id || (j > 0 && result.tokens[j - 1] == id))
