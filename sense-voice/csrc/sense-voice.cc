@@ -775,7 +775,7 @@ int sense_voice_full_parallel(struct sense_voice_context *ctx,
 }
 
 void sense_voice_print_output(struct sense_voice_context *ctx, bool need_prefix, bool use_itn, bool refresh_self) {
-    for (int i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++) {
+    for (size_t i = (need_prefix ? 0 : 4); i < ctx->state->ids.size(); i++) {
         int id = ctx->state->ids[i];
         if (i > 0 && ctx->state->ids[i - 1] == ctx->state->ids[i])
             continue;
@@ -915,6 +915,8 @@ int sense_voice_batch_pcmf(std::vector<std::vector<double>> &pcmf32, const sense
 }
 
 void sense_voice_batch_print_output(struct sense_voice_context *ctx, bool need_prefix, bool use_itn, bool refresh_self) {
+    printf("=======================================\n");
+    printf("batch size: %ld\n", ctx->state->segmentIDs.size());
     for (size_t i = 0; i < ctx->state->segmentIDs.size(); i++) {
         const int resultID = ctx->state->segmentIDs[i];
         const sense_voice_segment &result = ctx->state->result_all[resultID];
