@@ -473,7 +473,7 @@ int main(int argc, char **argv) {
                     }
                     max_len = std::max(max_len, ctx->state->result_all[i].samples.size());
                     // 这里确保了i>batch_L
-                    if (max_len * (i - batch_L + 1) > batch_samples || i - batch_L > 3) {
+                    if (max_len * (i - batch_L + 1) > batch_samples) {
                     // if (i - batch_L > 0) {
                     // if (i - batch_L > 1) {
                         sense_voice_batch_full(ctx, wparams);
