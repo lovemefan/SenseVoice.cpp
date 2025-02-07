@@ -197,6 +197,19 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                     //     printf("fsmn_memory: %ld %ld %ld %ld\n", fsmn_memory->ne[0], fsmn_memory->ne[1], fsmn_memory->ne[2], fsmn_memory->ne[3]);
                     // }
                 }
+                // struct ggml_tensor * im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1] * b->ne[2], b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                // im2col = ggml_reshape_4d(ctx0, im2col, im2col->ne[0], im2col->ne[1], im2col->ne[2] / n_batch, n_batch);
+                // struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
+                // fsmn_memory = ggml_reshape_3d(ctx0, result, im2col->ne[1], im2col->ne[2], im2col->ne[3]);
+                // if(n_batch > 1){
+                //     printf("n_batch: %d\n", n_batch);
+                //     printf("a: %ld %ld %ld %ld\n", a->ne[0], a->ne[1], a->ne[2], a->ne[3]);
+                //     printf("b: %ld %ld %ld %ld\n", b->ne[0], b->ne[1], b->ne[2], b->ne[3]);
+                //     printf("im2col: %ld %ld %ld %ld\n", im2col->ne[0], im2col->ne[1], im2col->ne[2], im2col->ne[3]);
+                //     printf("result: %ld %ld %ld %ld\n", result->ne[0], result->ne[1], result->ne[2], result->ne[3]);
+                //     printf("fsmn_memory: %ld %ld %ld %ld\n", fsmn_memory->ne[0], fsmn_memory->ne[1], fsmn_memory->ne[2], fsmn_memory->ne[3]);
+                //     printf("V: %ld %ld %ld %ld\n", V->ne[0], V->ne[1], V->ne[2], V->ne[3]);
+                // }
             }
             fsmn_memory = ggml_cont(ctx0, ggml_transpose(ctx0, fsmn_memory));
             fsmn_memory = ggml_add(ctx0, fsmn_memory, V);
