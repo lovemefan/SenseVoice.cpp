@@ -29,6 +29,7 @@ struct sense_voice_params {
     int32_t max_nomute_chunks = 30000 / chunk_size;  // chunks
     int32_t min_mute_chunks = 1000 / chunk_size;     // chunks
     int32_t max_chunks_in_batch = 30000 / chunk_size;// chunks
+    int32_t max_batch = 4;
 
     bool debug_mode = false;
     bool no_prints = false;
@@ -117,6 +118,8 @@ static void sense_voice_print_usage(int /*argc*/, char **argv, const sense_voice
     fprintf(stderr, "             --chunk_size        [%-7d] vad chunk size(ms)\n", params.chunk_size);
     fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7d] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
     fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7d] when the first non-silent chunk is too far away\n", params.max_nomute_chunks);
+    fprintf(stderr, "             --maxchunk-in-batch [%-7d] the number of cutted audio can be processed at one time\n", params.max_chunks_in_batch);
+    fprintf(stderr, "  -b         --batch             [%-7d] the number of cutted audio can be processed at one time\n", params.max_batch);
     fprintf(stderr, "\n");
 }
 
@@ -202,6 +205,10 @@ static bool sense_voice_params_parse(int argc, char **argv, sense_voice_params &
             params.min_mute_chunks = std::stoi(argv[++i]);
         } else if (arg == "-mnc" || arg == "--max-nomute-chunks") {
             params.max_nomute_chunks = std::stoi(argv[++i]);
+        } else if (arg == "--maxchunk-in-batch") {
+            params.max_chunks_in_batch = std::stoi(argv[++i]);
+        } else if (arg == "-b" || arg == "--batch") {
+            params.max_batch = std::stoi(argv[++i]);
         } else if (arg == "--chunk_size") {
             params.chunk_size = std::stoi(argv[++i]);
         } else {
@@ -473,7 +480,7 @@ int main(int argc, char **argv) {
                     }
                     max_len = std::max(max_len, ctx->state->result_all[i].samples.size());
                     // 这里确保了i>batch_L
-                    if (max_len * (i - batch_L + 1) > batch_samples) {
+                    if (max_len * (i - batch_L + 1) > batch_samples || i - batch_L >= params.max_batch) {
                     // if (i - batch_L > 0) {
                     // if (i - batch_L > 1) {
                         sense_voice_batch_full(ctx, wparams);
