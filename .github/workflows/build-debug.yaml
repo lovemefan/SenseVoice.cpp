@@ -31,7 +31,8 @@ jobs:
       - name: Dependencies
         run: |
           yum update -y
-          yum install -y git gcc gcc-c++ make cmake tmate
+          yum install -y git gcc gcc-c++ make cmake
+          dnf -y install tmate
 
       - name: Enable debug logging
         if: ${{ inputs.debug_enabled == true }}
