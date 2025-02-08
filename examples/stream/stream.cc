@@ -13,14 +13,10 @@ struct sense_voice_stream_params {
     int32_t n_threads         = std::min(4, (int32_t) std::thread::hardware_concurrency());
     int32_t n_processors      = 1;
     int32_t capture_id        = -1;
-    int32_t beam_size         = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_BEAM_SEARCH).beam_search.beam_size;
-    int32_t best_of           = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY).greedy.best_of;
     int32_t chunk_size        = 100;                       // ms
     int32_t max_nomute_chunks = 8000 / chunk_size;  // chunks
     int32_t min_mute_chunks   = 1000 / chunk_size;    // chunks
 
-    bool no_context    = true;
-    bool no_timestamps = false;
     bool use_gpu       = true;
     bool flash_attn    = false;
     bool debug_mode    = false;
@@ -46,7 +42,6 @@ void sense_voice_stream_usage(int /*argc*/, char ** argv, const sense_voice_stre
     fprintf(stderr, "            --use-vad           [%-7s] when the first non-silent chunk is too far away\n",          params.use_vad ? "true" : "false");
     fprintf(stderr, "            --use-prefix        [%-7s] use sense voice prefix\n",          params.use_prefix ? "true" : "false");
     fprintf(stderr, "  -c ID,    --capture ID        [%-7d] [Device] capture device ID\n",                               params.capture_id);
-    fprintf(stderr, "  -kc,      --keep-context      [%-7s] [IO] keep context between audio chunks\n",                   params.no_context ? "false" : "true");
     fprintf(stderr, "  -l LANG,  --language LANG     [%-7s] [SenseVoice] spoken language\n",                             params.language.c_str());
     fprintf(stderr, "  -m FNAME, --model FNAME       [%-7s] [SenseVoice] model path\n",                                  params.model.c_str());
     fprintf(stderr, "  -f FNAME, --file FNAME        [%-7s] [IO] text output file name\n",                               params.fname_out.c_str());
@@ -67,7 +62,6 @@ static bool get_stream_params(int argc, char ** argv, sense_voice_stream_params 
         }
         else if (arg == "-t"    || arg == "--threads")       { params.n_threads     = std::stoi(argv[++i]); }
         else if (arg == "-c"    || arg == "--capture")       { params.capture_id    = std::stoi(argv[++i]); }
-        else if (arg == "-kc"   || arg == "--keep-context")  { params.no_context    = false; }
         else if (arg == "-l"    || arg == "--language")      { params.language      = argv[++i]; }
         else if (arg == "-m"    || arg == "--model")         { params.model         = argv[++i]; }
         else if (arg == "-f"    || arg == "--file")          { params.fname_out     = argv[++i]; }
@@ -114,10 +108,6 @@ int main(int argc, char** argv)
     const int keep_nomute_step = params.chunk_size * params.min_mute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
     const int max_nomute_step = params.chunk_size * params.max_nomute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
 
-    params.no_timestamps  = !params.use_vad;
-    params.no_context |= params.use_vad;
-    // params.max_tokens = 0;
-
     audio_async audio(params.chunk_size << 2);
     if (!audio.init(params.capture_id, SENSE_VOICE_SAMPLE_RATE)) {
         fprintf(stderr, "%s: audio.init() failed!\n", __func__);
@@ -147,13 +137,12 @@ int main(int argc, char** argv)
 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "%s: processing samples (chunk = %d ms / max_nomute_chunk = %d / min_mute_chunk = %d), %d threads, timestamps = %d ...\n",
+        fprintf(stderr, "%s: processing samples (chunk = %d ms / max_nomute_chunk = %d / min_mute_chunk = %d), %d threads ...\n",
                 __func__,
                 params.chunk_size,
                 params.max_nomute_chunks,
                 params.min_mute_chunks,
-                params.n_threads,
-                params.no_timestamps ? 0 : 1);
+                params.n_threads);
 
         if (!params.use_vad) {
             fprintf(stderr, "%s: not use VAD, will print identified result per %d ms\n", __func__, params.chunk_size * params.max_nomute_chunks);
@@ -167,14 +156,9 @@ int main(int argc, char** argv)
 
     sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
     {
-        wparams.print_progress   = false;
-        wparams.no_timestamps    = !params.no_timestamps;
         wparams.language         = params.language.c_str();
         wparams.n_threads        = params.n_threads;
         wparams.debug_mode       = params.debug_mode;
-
-        wparams.greedy.best_of        = params.best_of;
-        wparams.beam_search.beam_size = params.beam_size;
     }
 
     int idenitified_floats = 0, R_new_chunk = 0, L_new_chunk = 0;

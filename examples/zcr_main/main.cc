@@ -22,8 +22,6 @@ struct sense_voice_params {
     int32_t progress_step = 5;
     int32_t max_context = -1;
     int32_t n_mel = 80;
-    int32_t best_of = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY).greedy.best_of;
-    int32_t beam_size = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_BEAM_SEARCH).beam_search.beam_size;
     int32_t audio_ctx = 0;
     size_t chunk_size = 100;                        // ms
     size_t max_nomute_chunks = 30000 / chunk_size;  // chunks
@@ -33,8 +31,6 @@ struct sense_voice_params {
 
     bool debug_mode = false;
     bool no_prints = false;
-    bool print_progress = false;
-    bool no_timestamps = false;
     bool use_gpu = true;
     bool flash_attn = false;
     bool use_itn = false;
@@ -98,14 +94,10 @@ static void sense_voice_print_usage(int /*argc*/, char **argv, const sense_voice
     fprintf(stderr, "  -on N,     --offset-n N        [%-7d] segment index offset\n", params.offset_n);
     fprintf(stderr, "  -d  N,     --duration N        [%-7d] duration of audio to process in milliseconds\n", params.duration_ms);
     fprintf(stderr, "  -mc N,     --max-context N     [%-7d] maximum number of text context tokens to store\n", params.max_context);
-    fprintf(stderr, "  -bo N,     --best-of N         [%-7d] number of best candidates to keep\n", params.best_of);
-    fprintf(stderr, "  -bs N,     --beam-size N       [%-7d] beam size for beam search\n", params.beam_size);
     fprintf(stderr, "  -ac N,     --audio-ctx N       [%-7d] audio context size (0 - all)\n", params.audio_ctx);
     fprintf(stderr, "  -debug,    --debug-mode        [%-7s] enable debug mode (eg. dump log_mel)\n", params.debug_mode ? "true" : "false");
     fprintf(stderr, "  -of FNAME, --output-file FNAME [%-7s] output file path (without file extension)\n", "");
     fprintf(stderr, "  -np,       --no-prints         [%-7s] do not print anything other than the results\n", params.no_prints ? "true" : "false");
-    fprintf(stderr, "  -pp,       --print-progress    [%-7s] print progress\n", params.print_progress ? "true" : "false");
-    fprintf(stderr, "  -nt,       --no-timestamps     [%-7s] do not print timestamps\n", params.no_timestamps ? "true" : "false");
     fprintf(stderr, "  -l LANG,   --language LANG     [%-7s] spoken language ('auto' for auto-detect), support [`zh`, `en`, `yue`, `ja`, `ko`\n", params.language.c_str());
     fprintf(stderr, "             --use-prefix        [%-7s] use sense voice prefix\n", params.use_prefix ? "true" : "false");
     fprintf(stderr, "             --prompt PROMPT     [%-7s] initial prompt (max n_text_ctx/2 tokens)\n", params.prompt.c_str());
@@ -167,10 +159,6 @@ static bool sense_voice_params_parse(int argc, char **argv, sense_voice_params &
             params.duration_ms = std::stoi(argv[++i]);
         } else if (arg == "-mc" || arg == "--max-context") {
             params.max_context = std::stoi(argv[++i]);
-        } else if (arg == "-bo" || arg == "--best-of") {
-            params.best_of = std::stoi(argv[++i]);
-        } else if (arg == "-bs" || arg == "--beam-size") {
-            params.beam_size = std::stoi(argv[++i]);
         } else if (arg == "-ac" || arg == "--audio-ctx") {
             params.audio_ctx = std::stoi(argv[++i]);
         } else if (arg == "-debug" || arg == "--debug-mode") {
@@ -179,10 +167,6 @@ static bool sense_voice_params_parse(int argc, char **argv, sense_voice_params &
             params.fname_out.emplace_back(argv[++i]);
         } else if (arg == "-np" || arg == "--no-prints") {
             params.no_prints = false;
-        } else if (arg == "-pp" || arg == "--print-progress") {
-            params.print_progress = true;
-        } else if (arg == "-nt" || arg == "--no-timestamps") {
-            params.no_timestamps = true;
         } else if (arg == "-l" || arg == "--language") {
             params.language = sense_voice_param_turn_lowercase(argv[++i]);
         } else if (arg == "--prompt") {
@@ -453,18 +437,11 @@ int main(int argc, char **argv) {
 
         {
             sense_voice_full_params wparams = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY);
-            wparams.strategy = (params.beam_size > 1) ? SENSE_VOICE_SAMPLING_BEAM_SEARCH : SENSE_VOICE_SAMPLING_GREEDY;
-            wparams.print_progress = params.print_progress;
-            wparams.print_timestamps = !params.no_timestamps;
             wparams.language = params.language.c_str();
             wparams.n_threads = params.n_threads;
-            wparams.n_max_text_ctx = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
             wparams.offset_ms = params.offset_t_ms;
             wparams.duration_ms = params.duration_ms;
             wparams.debug_mode = params.debug_mode;
-            wparams.greedy.best_of = params.best_of;
-            wparams.beam_search.beam_size = params.beam_size;
-            wparams.no_timestamps = params.no_timestamps;
             sense_voice_split_segments(ctx, params, pcmf32);
             // ctx->state->result_all需要分块识别
             {
