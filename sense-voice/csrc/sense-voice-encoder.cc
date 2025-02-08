@@ -175,32 +175,23 @@ static struct ggml_tensor *encoder_layer_sanm_forward(const sense_voice_hparams 
                 struct ggml_tensor * a = layer.e_attn_fsmn_w;
                 struct ggml_tensor * b = ggml_cont(ctx0, ggml_transpose(ctx0, V));
                 // Process each batch separately and concatenate results
-                for (int i = 0; i < b->ne[2]; i++) {
-                    // View for current batch
-                    struct ggml_tensor *b_batch = ggml_view_3d(ctx0, b, b->ne[0], b->ne[1], 1, b->nb[1], b->nb[2], i * b->nb[2]);
-                    struct ggml_tensor *im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b_batch, b_batch->ne[0], 1, b_batch->ne[1], b_batch->ne[2] * b_batch->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
-                    struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
-                    struct ggml_tensor * fsmn_memory_batch = ggml_reshape_3d(ctx0, result, im2col->ne[1], b_batch->ne[1], b_batch->ne[2]);
-                    if (fsmn_memory == nullptr) {
-                        fsmn_memory = fsmn_memory_batch;
-                    } else {
-                        fsmn_memory = ggml_concat(ctx0, fsmn_memory, fsmn_memory_batch, 2);
-                    }
-                    // if(n_batch > 1){
-                    //     printf("n_batch: %d\n", n_batch);
-                    //     printf("a: %ld %ld %ld %ld\n", a->ne[0], a->ne[1], a->ne[2], a->ne[3]);
-                    //     printf("b: %ld %ld %ld %ld\n", b->ne[0], b->ne[1], b->ne[2], b->ne[3]);
-                    //     printf("b_batch: %ld %ld %ld %ld\n", b_batch->ne[0], b_batch->ne[1], b_batch->ne[2], b_batch->ne[3]);
-                    //     printf("fsmn_memory_batch: %ld %ld %ld %ld\n", fsmn_memory_batch->ne[0], fsmn_memory_batch->ne[1], fsmn_memory_batch->ne[2], fsmn_memory_batch->ne[3]);
-                    //     printf("im2col: %ld %ld %ld %ld\n", im2col->ne[0], im2col->ne[1], im2col->ne[2], im2col->ne[3]);
-                    //     printf("result: %ld %ld %ld %ld\n", result->ne[0], result->ne[1], result->ne[2], result->ne[3]);
-                    //     printf("fsmn_memory: %ld %ld %ld %ld\n", fsmn_memory->ne[0], fsmn_memory->ne[1], fsmn_memory->ne[2], fsmn_memory->ne[3]);
-                    // }
-                }
-                // struct ggml_tensor * im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1] * b->ne[2], b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
-                // im2col = ggml_reshape_4d(ctx0, im2col, im2col->ne[0], im2col->ne[1], im2col->ne[2] / n_batch, n_batch);
-                // struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
-                // fsmn_memory = ggml_reshape_3d(ctx0, result, im2col->ne[1], im2col->ne[2], im2col->ne[3]);
+                // for (int i = 0; i < b->ne[2]; i++) {
+                //     // View for current batch
+                //     struct ggml_tensor *b_batch = ggml_view_3d(ctx0, b, b->ne[0], b->ne[1], 1, b->nb[1], b->nb[2], i * b->nb[2]);
+                //     struct ggml_tensor *im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b_batch, b_batch->ne[0], 1, b_batch->ne[1], b_batch->ne[2] * b_batch->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                //     struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
+                //     struct ggml_tensor * fsmn_memory_batch = ggml_reshape_3d(ctx0, result, im2col->ne[1], b_batch->ne[1], b_batch->ne[2]);
+                //     if (fsmn_memory == nullptr) {
+                //         fsmn_memory = fsmn_memory_batch;
+                //     } else {
+                //         fsmn_memory = ggml_concat(ctx0, fsmn_memory, fsmn_memory_batch, 2);
+                //     }
+                // }
+                struct ggml_tensor * im2col = ggml_im2col(ctx0, a, ggml_reshape_4d(ctx0, b, b->ne[0], 1, b->ne[1] * b->ne[2], b->ne[3]), 1, 0, padding, 0, 1, 0, false, GGML_TYPE_F32);
+                im2col = ggml_reshape_4d(ctx0, im2col, im2col->ne[0], im2col->ne[1], im2col->ne[2] / n_batch, n_batch);
+                a = ggml_repeat(ctx0, ggml_cast(ctx0, a, GGML_TYPE_F32), ggml_new_tensor_4d(ctx0, GGML_TYPE_F16, a->ne[0], a->ne[1], a->ne[2], n_batch));
+                struct ggml_tensor * result = ggml_mul_mat(ctx0, a, im2col);
+                fsmn_memory = ggml_reshape_3d(ctx0, result, im2col->ne[1], im2col->ne[2], im2col->ne[3]);
                 // if(n_batch > 1){
                 //     printf("n_batch: %d\n", n_batch);
                 //     printf("a: %ld %ld %ld %ld\n", a->ne[0], a->ne[1], a->ne[2], a->ne[3]);

@@ -25,11 +25,11 @@ struct sense_voice_params {
     int32_t best_of = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_GREEDY).greedy.best_of;
     int32_t beam_size = sense_voice_full_default_params(SENSE_VOICE_SAMPLING_BEAM_SEARCH).beam_search.beam_size;
     int32_t audio_ctx = 0;
-    int32_t chunk_size = 100;                        // ms
-    int32_t max_nomute_chunks = 30000 / chunk_size;  // chunks
-    int32_t min_mute_chunks = 1000 / chunk_size;     // chunks
-    int32_t max_chunks_in_batch = 30000 / chunk_size;// chunks
-    int32_t max_batch = 4;
+    size_t chunk_size = 100;                        // ms
+    size_t max_nomute_chunks = 30000 / chunk_size;  // chunks
+    size_t min_mute_chunks = 1000 / chunk_size;     // chunks
+    size_t max_chunks_in_batch = 90000 / chunk_size;// chunks
+    size_t max_batch = 4;
 
     bool debug_mode = false;
     bool no_prints = false;
@@ -115,11 +115,11 @@ static void sense_voice_print_usage(int /*argc*/, char **argv, const sense_voice
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n", params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n", params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n", params.use_itn ? "true" : "false");
-    fprintf(stderr, "             --chunk_size        [%-7d] vad chunk size(ms)\n", params.chunk_size);
-    fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7d] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
-    fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7d] when the first non-silent chunk is too far away\n", params.max_nomute_chunks);
-    fprintf(stderr, "             --maxchunk-in-batch [%-7d] the number of cutted audio can be processed at one time\n", params.max_chunks_in_batch);
-    fprintf(stderr, "  -b         --batch             [%-7d] the number of cutted audio can be processed at one time\n", params.max_batch);
+    fprintf(stderr, "             --chunk_size        [%-7lu] vad chunk size(ms)\n", params.chunk_size);
+    fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7lu] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
+    fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7lu] when the first non-silent chunk is too far away\n", params.max_nomute_chunks);
+    fprintf(stderr, "             --maxchunk-in-batch [%-7lu] the number of cutted audio can be processed at one time\n", params.max_chunks_in_batch);
+    fprintf(stderr, "  -b         --batch             [%-7lu] the number of cutted audio can be processed at one time\n", params.max_batch);
     fprintf(stderr, "\n");
 }
 
@@ -311,8 +311,8 @@ void sense_voice_split_segments(struct sense_voice_context *ctx, const sense_voi
     const int keep_nomute_step = params.chunk_size * params.min_mute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
     const int max_nomute_step = params.chunk_size * params.max_nomute_chunks * 1e-3 * SENSE_VOICE_SAMPLE_RATE;
     // const bool use_vad = (n_samples_step <= 0);
-    for (size_t i = 0; i < pcmf32.size(); i += n_sample_step) {
-        int R_this_chunk = std::min(i + n_sample_step, pcmf32.size());
+    for (int i = 0; i < int(pcmf32.size()); i += n_sample_step) {
+        int R_this_chunk = std::min(i + n_sample_step, int(pcmf32.size()));
         bool isnomute = vad_energy_zcr<double>(pcmf32.begin() + i, R_this_chunk - i, SENSE_VOICE_SAMPLE_RATE);
 
         // fprintf(stderr, "Mute || L_mute = %d, R_Mute = %d, L_nomute = %d, R_this_chunk = %d, keep_nomute_step = %d\n", L_mute, R_mute, L_nomute, R_this_chunk, keep_nomute_step);
@@ -466,7 +466,6 @@ int main(int argc, char **argv) {
             wparams.beam_search.beam_size = params.beam_size;
             wparams.no_timestamps = params.no_timestamps;
             sense_voice_split_segments(ctx, params, pcmf32);
-            fprintf(stderr, "segments cnt: %d\n", ctx->state->result_all.size());
             // ctx->state->result_all需要分块识别
             {
                 const size_t batch_samples = params.max_chunks_in_batch * params.chunk_size * 1e-3 * SENSE_VOICE_SAMPLE_RATE;

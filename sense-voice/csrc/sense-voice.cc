@@ -915,8 +915,8 @@ int sense_voice_batch_pcmf(std::vector<std::vector<double>> &pcmf32, const sense
 }
 
 void sense_voice_batch_print_output(struct sense_voice_context *ctx, bool need_prefix, bool use_itn, bool refresh_self) {
-    printf("=======================================\n");
-    printf("batch size: %ld\n", ctx->state->segmentIDs.size());
+    SENSE_VOICE_LOG_INFO("=======================================\n");
+    SENSE_VOICE_LOG_INFO("batch size: %ld\n", ctx->state->segmentIDs.size());
     for (size_t i = 0; i < ctx->state->segmentIDs.size(); i++) {
         const int resultID = ctx->state->segmentIDs[i];
         const sense_voice_segment &result = ctx->state->result_all[resultID];
