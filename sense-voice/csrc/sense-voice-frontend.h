@@ -122,11 +122,6 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
                             const int frame_step, const int n_feats,
                             const int n_threads, const bool debug,
                             sense_voice_cmvn &cmvn, sense_voice_feature &feats);
-bool fbank_lfr_cmvn_feature_batch(const std::vector<std::vector<double>> &samples,
-                            const int n_samples, const int frame_size,
-                            const int frame_step, const int n_feats,
-                            const int n_threads, const bool debug,
-                            sense_voice_cmvn &cmvn, sense_voice_feature &feats);
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<double> &data);
 
