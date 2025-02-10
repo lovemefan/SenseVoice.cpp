@@ -402,7 +402,7 @@ static bool ggml_debug(struct ggml_tensor * t, bool ask, void * user_data) {
 void sense_voice_free(struct sense_voice_context * ctx) {
     if (ctx) {
         ggml_free(ctx->model.ctx);
-        ggml_free(ctx->vad_model.ctx);
+        //ggml_free(ctx->vad_model.ctx); // not used.
         ggml_backend_buffer_free(ctx->model.buffer);
         ggml_backend_buffer_free(ctx->vad_model.buffer);
 
