@@ -279,7 +279,7 @@ jobs:
       - name: Build using CMake
         shell: msys2 {0}
         run: |
-          export PATH="$PATH:/c/Program\ Files/Git/cmd"
+          export PATH="$PATH:/c/Program Files/Git/bin:/c/Program Files/Git/cmd"
           /c/Program\ Files/Git/cmd/git.exe submodule sync
           /c/Program\ Files/Git/cmd/git.exe submodule update --init --recursive
           cmake -B build
