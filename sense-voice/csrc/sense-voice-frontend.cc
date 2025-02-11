@@ -286,3 +286,4 @@ bool load_wav_file(const char *filename, int32_t *sampling_rate,
   }
 
 }
+

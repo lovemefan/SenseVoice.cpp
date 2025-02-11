@@ -260,47 +260,49 @@ struct sense_voice_hparams {
 
 // replace std::pair by using customized pair struct (reason: std::pair is very
 // slow)
-template <typename A, typename B>
-struct paraformer_pair {
-    A first;
-    B second;
+// template <typename A, typename B>
+// struct paraformer_pair {
+//     A first;
+//     B second;
 
-    // Define a constructor that takes two arguments.
-    paraformer_pair(const A &a, const B &b) : first(a), second(b) {}
-    // Define a constructor that takes no argument.
-    paraformer_pair() : first(A()), second(B()) {}
-};
+//     // Define a constructor that takes two arguments.
+//     paraformer_pair(const A &a, const B &b) : first(a), second(b) {}
+//     // Define a constructor that takes no argument.
+//     paraformer_pair() : first(A()), second(B()) {}
+// };
 
 
 // ggml_allocr wrapper for usage
-struct sense_voice_allocr {
-    ggml_gallocr_t alloc = nullptr;
-    std::vector<uint8_t> meta;
-};
+// struct sense_voice_allocr {
+//     ggml_gallocr_t alloc = nullptr;
+//     std::vector<uint8_t> meta;
+// };
 
-struct sense_voice_token_data {
-    int id;   // token id
-    int tid;  // forced timestamp token id
+// struct sense_voice_token_data {
+//     int id;   // token id
+//     int tid;  // forced timestamp token id
 
-    float p;      // probability of the token
-    float plog;   // log probability of the token
-    float pt;     // probability of the timestamp token
-    float ptsum;  // sum of probabilities of all timestamp tokens
+//     float p;      // probability of the token
+//     float plog;   // log probability of the token
+//     float pt;     // probability of the timestamp token
+//     float ptsum;  // sum of probabilities of all timestamp tokens
 
-    // token-level timestamp data
-    // do not use if you haven't computed token-level timestamps
-    int64_t t0;  // start time of the token
-    int64_t t1;  //   end time of the token
+//     // token-level timestamp data
+//     // do not use if you haven't computed token-level timestamps
+//     int64_t t0;  // start time of the token
+//     int64_t t1;  //   end time of the token
 
-    float vlen;  // voice length of the token
-};
+//     float vlen;  // voice length of the token
+// };
 
 struct sense_voice_segment {
-    int64_t t0;
-    int64_t t1;
-    std::string text;
-    std::vector<sense_voice_token_data> tokens;
-    bool speaker_turn_next;
+    size_t t0;                   // 时间区间左端点
+    size_t t1;                   // 时间区间右端点
+    // std::string text;         // tokens对应的文本
+    std::vector<int> tokens;     // 识别后的tokens
+    std::vector<double> samples;  // 具体音频
+    // std::vector<float> 
+    // bool speaker_turn_next;
 };
 
 struct sense_voice_vocab {
@@ -350,19 +352,19 @@ struct sense_voice_kv_cache {
 };
 
 struct sense_voice_state {
-    int64_t t_sample_us = 0;
+    // int64_t t_sample_us = 0;
     int64_t t_encode_us = 0;
     int64_t t_decode_us = 0;
-    int64_t t_prompt_us = 0;
+    // int64_t t_prompt_us = 0;
     int64_t t_feature_us = 0;
-    int32_t n_sample = 0;  // number of tokens sampled
-    int32_t n_encode = 0;  // number of encoder calls
-    int32_t n_decode =
-            0;  // number of decoder calls with n_tokens == 1 (text-generation)
-    int32_t n_prompt =
-            0;  // number of decoder calls with n_tokens >  1 (prompt encoding)
-    int32_t n_fail_p = 0;  // number of logprob threshold failures
-    int32_t n_fail_h = 0;  // number of entropy threshold failures
+    // int32_t n_sample = 0;  // number of tokens sampled
+    // int32_t n_encode = 0;  // number of encoder calls
+    // int32_t n_decode =
+    //         0;  // number of decoder calls with n_tokens == 1 (text-generation)
+    // int32_t n_prompt =
+    //         0;  // number of decoder calls with n_tokens >  1 (prompt encoding)
+    // int32_t n_fail_p = 0;  // number of logprob threshold failures
+    // int32_t n_fail_h = 0;  // number of entropy threshold failures
 
     float duration = 0;
     // padded buffer for flash-attention
@@ -372,7 +374,7 @@ struct sense_voice_state {
     sense_voice_feature feature;
 
     // reusable buffer for `struct ggml_graph_plan.work_data`
-    std::vector<uint8_t> work_buffer;
+    // std::vector<uint8_t> work_buffer;
 
     std::vector<ggml_backend_t> backends;
 
@@ -396,12 +398,12 @@ struct sense_voice_state {
 
     // decode output (2-dimensional array: [n_tokens][n_vocab])
     std::vector<int> ids;
-
     std::vector<sense_voice_segment> result_all;
-    std::vector<int> prompt_past;
+    std::vector<size_t> segmentIDs;
+    // std::vector<int> prompt_past;
 
     // work container used to avoid memory allocations
-    std::vector<paraformer_pair<double, sense_voice_vocab::id>> logits_id;
+    // std::vector<paraformer_pair<double, sense_voice_vocab::id>> logits_id;
 
     int lang_id = 0;  // english by default
 
@@ -412,10 +414,10 @@ struct sense_voice_state {
 
 
     // [EXPERIMENTAL] token-level timestamps data
-    int64_t t_beg = 0;
-    int64_t t_last = 0;
-    int tid_last;
-    std::vector<float> energy;  // PCM signal energy
+    // int64_t t_beg = 0;
+    // int64_t t_last = 0;
+    // int tid_last;
+    // std::vector<float> energy;  // PCM signal energy
 
     // [EXPERIMENTAL] speed-up techniques
     int32_t exp_n_audio_ctx = 0;  // 0 - use default
