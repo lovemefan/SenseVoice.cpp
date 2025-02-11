@@ -908,9 +908,48 @@ int sense_voice_batch_full(struct sense_voice_context *ctx, const sense_voice_fu
     return 0;
 }
 
-int sense_voice_batch_pcmf(std::vector<std::vector<double>> &pcmf32, const sense_voice_full_params &params) {
-    // 模拟一下生成sense_voice_context即可，直接构造一套segmentIDs，就可以直接送进去
-    // return sense_voice_batch_full(ctx, ctx->state, params, pcmf32);
+int sense_voice_batch_pcmf(struct sense_voice_context *ctx, const sense_voice_full_params &params, std::vector<std::vector<double>> &pcmf32,
+                           size_t max_batch_len, size_t max_batch_cnt,
+                           bool use_prefix, bool use_itn) 
+{
+    // 还是要有ctx，重复生成会重复读取模型，有点耗性能
+    // ctx中的参数需要在外面赋值，外面的参数形态各异，带不进来
+    // pcmf32是vector<vecotr>，因此不需要split
+    for(size_t segmentID = 0; segmentID < pcmf32.size(); segmentID++)
+    {
+        sense_voice_segment pcmf_tmp;
+        pcmf_tmp.t0 = pcmf_tmp.t1 = 0;
+        pcmf_tmp.samples = pcmf32[segmentID];
+        ctx->state->result_all.push_back(pcmf_tmp);
+    }
+    size_t max_len = 0, batch_L = ctx->state->result_all.size();
+    for (size_t i = 0; i < ctx->state->result_all.size(); i++) {
+        if (batch_L >= ctx->state->result_all.size()) {
+            batch_L = i;
+            max_len = ctx->state->result_all[i].samples.size();
+            ctx->state->segmentIDs.push_back(i);
+            continue;// 这里可以直接推进，收拢到下一个循环处理[batch_L, i]之间的关系
+        }
+        max_len = std::max(max_len, ctx->state->result_all[i].samples.size());
+        // 这里确保了i>batch_L
+        if (max_len * (i - batch_L + 1) > max_batch_len || i - batch_L >= max_batch_cnt) {
+            sense_voice_batch_full(ctx, params);
+            sense_voice_batch_print_output(ctx, use_prefix, use_itn);
+            batch_L = i;
+            max_len = ctx->state->result_all[i].samples.size();
+            ctx->state->segmentIDs.clear();
+        }
+        ctx->state->segmentIDs.push_back(i);
+    }
+    // 最后一组
+    if (batch_L < ctx->state->result_all.size()) {
+        // 识别全部即可
+        sense_voice_batch_full(ctx, params);
+        sense_voice_batch_print_output(ctx, use_prefix, use_itn);
+        ctx->state->segmentIDs.clear();
+        batch_L = ctx->state->result_all.size();
+        max_len = 0;
+    }
     return 0;
 }
 
