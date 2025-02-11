@@ -787,7 +787,6 @@ void sense_voice_print_output(struct sense_voice_context *ctx, bool need_prefix,
 
 int sense_voice_batch_pcm_to_feature_with_state(struct sense_voice_context *ctx,
                                                 struct sense_voice_state *state,
-                                                const std::vector<std::vector<double>> &pcmf32s,// Changed to 2D vector
                                                 bool debug,
                                                 int n_threads) {
     const int64_t t_start_us = ggml_time_us();
@@ -795,7 +794,16 @@ int sense_voice_batch_pcm_to_feature_with_state(struct sense_voice_context *ctx,
     cmvn.cmvn_means = std::vector<float>(CMVN_MEANS, CMVN_MEANS + cmvn_length);
     cmvn.cmvn_vars = std::vector<float>(CMVN_VARS, CMVN_VARS + cmvn_length);
     state->feature.input_data.clear();
-    for (const std::vector<double> &pcmf32: pcmf32s) {
+    size_t max_len = 0;
+    for (size_t segmentID: state->segmentIDs)
+        max_len = std::max(max_len, state->result_all[segmentID].samples.size());
+    for (size_t segmentID: state->segmentIDs)
+    {
+        std::vector<double>& pcmf32 = state->result_all[segmentID].samples;
+        if(pcmf32.size() < max_len) {
+            pcmf32.insert(pcmf32.end(), max_len - pcmf32.size(), 0);
+        }
+        // 这里实际上可以const。
         fbank_lfr_cmvn_feature(pcmf32, pcmf32.size(),
                                state->feature.frame_size,
                                state->feature.frame_step,
@@ -815,7 +823,7 @@ int sense_voice_batch_pcm_to_feature_with_state(struct sense_voice_context *ctx,
                                                    GGML_TYPE_F32,
                                                    state->feature.lfr_m * state->feature.n_mel,
                                                    state->feature.n_len,
-                                                   pcmf32s.size());// Batch size
+                                                   state->segmentIDs.size());// Batch size
         state->feature.buffer = ggml_backend_alloc_buffer(state->backends[0],
                                                           ggml_nbytes(state->feature.tensor) + ggml_backend_get_alignment(state->backends[0]));
         auto alloc = ggml_tallocr_new(state->feature.buffer);
@@ -836,33 +844,9 @@ int sense_voice_batch_pcm_to_feature_with_state(struct sense_voice_context *ctx,
 }
 
 int sense_voice_batch_full(struct sense_voice_context *ctx, const sense_voice_full_params &params) {
-    // TODO 二期工程：直接在ctx上改动大小是否可行？
-    // size_t max_len = 0;
-    // for(int i = 0; i < ctx->state->result_all.size(); i++) {
-    //     max_len = std::max(ctx->state->result_all[i].samples.size(), max_len);
-    // }
-    // for(int i = 0; i < ctx->state->result_all.size(); i++) {
-    //     if(max_len > ctx->state->result_all.size()) {
-    //         ctx->state->result_all[i].samples.insert(ctx->state->result_all[i].samples.end(), max_len - ctx->state->result_all[i].samples.size(), 0);
-    //     }
-    // }
-    std::vector<std::vector<double>> pcmf32s;
-    {
-        std::vector<double> pcmf32_tmp;
-        size_t max_len = 0;
-        // 注意内存效率优化，不要频繁移动
-        for (size_t segmentID: ctx->state->segmentIDs)
-            max_len = std::max(max_len, ctx->state->result_all[segmentID].samples.size());
-        pcmf32_tmp.resize(max_len);
-        for (size_t segmentID: ctx->state->segmentIDs) {
-            std::copy(ctx->state->result_all[segmentID].samples.begin(), ctx->state->result_all[segmentID].samples.end(), pcmf32_tmp.begin());
-            pcmf32s.push_back(pcmf32_tmp);
-            pcmf32_tmp.assign(pcmf32_tmp.size(), 0);
-        }
-    }
     sense_voice_state *state = ctx->state;
     // compute features (fbank + cmvn)
-    sense_voice_batch_pcm_to_feature_with_state(ctx, state, pcmf32s, params.debug_mode, params.n_threads);
+    sense_voice_batch_pcm_to_feature_with_state(ctx, state, params.debug_mode, params.n_threads);
     // initialize the decoders
     int n_decoders = 1;
 
