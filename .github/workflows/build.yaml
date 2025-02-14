@@ -2,7 +2,7 @@ name: CI
 on: [push, pull_request]
 
 env:
-  ubuntu_image: "ubuntu:22.04"
+  ubuntu_image: "tonistiigi/binfmt:qemu-v7.0.0-28"
 
 jobs:
   ubuntu-22:
@@ -19,8 +19,6 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          image: tonistiigi/binfmt:qemu-v7.0.0-28
 
       - name: Build ${{ matrix.arch }}
         run: |
@@ -70,8 +68,6 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          image: tonistiigi/binfmt:qemu-v7.0.0-28
 
       - name: Build ${{ matrix.arch }}
         run: |
@@ -105,8 +101,6 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          image: tonistiigi/binfmt:qemu-v7.0.0-28
 
       - name: Build ${{ matrix.arch }}
         run: |
@@ -137,8 +131,6 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          image: tonistiigi/binfmt:qemu-v7.0.0-28
 
       - name: Build ${{ matrix.arch }}
         run: |
