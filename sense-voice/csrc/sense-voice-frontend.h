@@ -18,7 +18,6 @@
 
 struct sense_voice_feature {
   int n_len;
-  int n_len_org;
   int n_mel=80;
   float mel_low_freq = 31.748642f;
   float mel_high_freq = 2840.03784f;
@@ -29,6 +28,7 @@ struct sense_voice_feature {
   int32_t frame_size = 25;
   int32_t frame_step = 10;
   std::vector<float> data;
+  std::vector<float> input_data;
   ggml_context * ctx = nullptr;
   ggml_tensor * tensor = nullptr;
   ggml_backend_buffer_t buffer = nullptr;
@@ -122,13 +122,12 @@ bool fbank_lfr_cmvn_feature(const std::vector<double> &samples,
                             const int frame_step, const int n_feats,
                             const int n_threads, const bool debug,
                             sense_voice_cmvn &cmvn, sense_voice_feature &feats);
-
 bool load_wav_file(const char *filename, int32_t *sampling_rate,
                    std::vector<double> &data);
 
 
 template<typename T>
-bool vad_energy_zcr(const typename std::vector<T>::iterator &pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
+bool vad_energy_zcr(const typename std::vector<T>::const_iterator& pcmf32, size_t siz, int sample_rate, T energy_threshold = 0.01, T zcr_threshold = 0.2, bool verbose = false)
 {
     const int frame_size = 256; // 16ms at 16kHz
     const int frame_shift = 128; // 50% overlap
