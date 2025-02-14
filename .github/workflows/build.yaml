@@ -146,111 +146,111 @@ jobs:
             cmake . -DCMAKE_BUILD_TYPE=Debug -DSENSE_VOICE_SANITIZE_${{ matrix.sanitizer }}=ON
             make'
 
-#  ubuntu-22-cmake-sycl:
-#    runs-on: ubuntu-22.04
-#
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        dggml_sycl: [ON]
-#        dcmake_c_compiler: [icx]
-#        dcmake_cxx_compiler: [icpx]
-#        arch: [linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le]
-#
-#    continue-on-error: true
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: add oneAPI to apt
-#        shell: bash
-#        run: |
-#          cd /tmp
-#          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
-#
-#      - name: install oneAPI dpcpp compiler
-#        shell: bash
-#        run: |
-#          sudo apt update
-#          sudo apt install intel-oneapi-compiler-dpcpp-cpp git cmake -y
-#
-#      - name: install oneAPI MKL library
-#        shell: bash
-#        run: |
-#          sudo apt install intel-oneapi-mkl-devel
-#
-#      - name: Clone
-#        id: checkout
-#        uses: actions/checkout@v4
-#
-#      - name: Build
-#        id: cmake_build
-#        run: |
-#          source /opt/intel/oneapi/setvars.sh
-#          git config --global --add safe.directory /workspace
-#          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
-#          git submodule sync && git submodule update --init --recursive
-#          mkdir build
-#          cd build
-#          cmake -DGGML_SYCL=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
-#          cmake --build . --config Release -j $(nproc)
-#
-#  ubuntu-22-cmake-sycl-fp16:
-#    runs-on: ubuntu-22.04
-#
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        dggml_sycl: [ON]
-#        dcmake_c_compiler: [icx]
-#        dcmake_cxx_compiler: [icpx]
-#        arch: [linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le]
-#
-#    continue-on-error: true
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: add oneAPI to apt
-#        shell: bash
-#        run: |
-#          cd /tmp
-#          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-#          sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
-#
-#      - name: install oneAPI dpcpp compiler
-#        shell: bash
-#        run: |
-#          sudo apt update
-#          sudo apt install intel-oneapi-compiler-dpcpp-cpp cmake git -y
-#
-#      - name: install oneAPI MKL library
-#        shell: bash
-#        run: |
-#          sudo apt install intel-oneapi-mkl-devel
-#
-#      - name: Clone
-#        id: checkout
-#        uses: actions/checkout@v4
-#
-#      - name: Build
-#        id: cmake_build
-#        run: |
-#          source /opt/intel/oneapi/setvars.sh
-#          git config --global --add safe.directory /workspace
-#          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
-#          git submodule sync && git submodule update --init --recursive
-#          mkdir build
-#          cd build
-#          cmake -DGGML_SYCL_F16=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
-#          cmake --build . --config Release -j $(nproc)
+  #  ubuntu-22-cmake-sycl:
+  #    runs-on: ubuntu-22.04
+  #
+  #    strategy:
+  #      fail-fast: false
+  #      matrix:
+  #        dggml_sycl: [ON]
+  #        dcmake_c_compiler: [icx]
+  #        dcmake_cxx_compiler: [icpx]
+  #        arch: [linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le]
+  #
+  #    continue-on-error: true
+  #
+  #    steps:
+  #      - name: Clone
+  #        uses: actions/checkout@v4
+  #
+  #      - name: add oneAPI to apt
+  #        shell: bash
+  #        run: |
+  #          cd /tmp
+  #          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
+  #
+  #      - name: install oneAPI dpcpp compiler
+  #        shell: bash
+  #        run: |
+  #          sudo apt update
+  #          sudo apt install intel-oneapi-compiler-dpcpp-cpp git cmake -y
+  #
+  #      - name: install oneAPI MKL library
+  #        shell: bash
+  #        run: |
+  #          sudo apt install intel-oneapi-mkl-devel
+  #
+  #      - name: Clone
+  #        id: checkout
+  #        uses: actions/checkout@v4
+  #
+  #      - name: Build
+  #        id: cmake_build
+  #        run: |
+  #          source /opt/intel/oneapi/setvars.sh
+  #          git config --global --add safe.directory /workspace
+  #          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
+  #          git submodule sync && git submodule update --init --recursive
+  #          mkdir build
+  #          cd build
+  #          cmake -DGGML_SYCL=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
+  #          cmake --build . --config Release -j $(nproc)
+  #
+  #  ubuntu-22-cmake-sycl-fp16:
+  #    runs-on: ubuntu-22.04
+  #
+  #    strategy:
+  #      fail-fast: false
+  #      matrix:
+  #        dggml_sycl: [ON]
+  #        dcmake_c_compiler: [icx]
+  #        dcmake_cxx_compiler: [icpx]
+  #        arch: [linux/amd64, linux/arm64, linux/arm/v7, linux/ppc64le]
+  #
+  #    continue-on-error: true
+  #
+  #    steps:
+  #      - name: Clone
+  #        uses: actions/checkout@v4
+  #
+  #      - name: add oneAPI to apt
+  #        shell: bash
+  #        run: |
+  #          cd /tmp
+  #          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+  #          sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
+  #
+  #      - name: install oneAPI dpcpp compiler
+  #        shell: bash
+  #        run: |
+  #          sudo apt update
+  #          sudo apt install intel-oneapi-compiler-dpcpp-cpp cmake git -y
+  #
+  #      - name: install oneAPI MKL library
+  #        shell: bash
+  #        run: |
+  #          sudo apt install intel-oneapi-mkl-devel
+  #
+  #      - name: Clone
+  #        id: checkout
+  #        uses: actions/checkout@v4
+  #
+  #      - name: Build
+  #        id: cmake_build
+  #        run: |
+  #          source /opt/intel/oneapi/setvars.sh
+  #          git config --global --add safe.directory /workspace
+  #          git config --global --add safe.directory /workspace/sense-voice/csrc/third-party/ggml
+  #          git submodule sync && git submodule update --init --recursive
+  #          mkdir build
+  #          cd build
+  #          cmake -DGGML_SYCL_F16=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx ..
+  #          cmake --build . --config Release -j $(nproc)
 
   windows-msys2:
     runs-on: windows-latest
@@ -328,7 +328,7 @@ jobs:
         run: |
           git submodule sync && git submodule update --init --recursive
           cmake -S . -B ./build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-          
+
 
       - name: Build
         run: |
@@ -479,8 +479,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Dependencies
         run: |
@@ -490,8 +488,8 @@ jobs:
       - name: Build
         run: |
           cd $GITHUB_WORKSPACE &&  ls -a
-#          git --git-dir=$GITHUB_WORKSPACE/.git --work-tree=$GITHUB_WORKSPACE submodule sync
-#          git --git-dir=$GITHUB_WORKSPACE/.git --work-tree=$GITHUB_WORKSPACE submodule update --init --recursive
+          git --git-dir=$GITHUB_WORKSPACE/.git --work-tree=$GITHUB_WORKSPACE submodule sync
+          git --git-dir=$GITHUB_WORKSPACE/.git --work-tree=$GITHUB_WORKSPACE submodule update --init --recursive
           export LD_LIBRARY_PATH=${ASCEND_TOOLKIT_HOME}/lib64:${ASCEND_TOOLKIT_HOME}/$(uname -m)-linux/devlib/:${LD_LIBRARY_PATH}
           cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
