@@ -477,11 +477,6 @@ jobs:
           - 'Release'
     container: ascendai/cann:${{ matrix.cann }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
       - name: Dependencies
         run: |
           yum update -y
@@ -490,6 +485,8 @@ jobs:
       - name: Build
         run: |
           export LD_LIBRARY_PATH=${ASCEND_TOOLKIT_HOME}/lib64:${ASCEND_TOOLKIT_HOME}/$(uname -m)-linux/devlib/:${LD_LIBRARY_PATH}
+          git clone https://github.com/lovemefan/SenseVoice.cpp.git 
+          cd SenseVoice.cpp && git submodule sync && git submodule update --init --recursive
           cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
               -DGGML_CANN=on \
