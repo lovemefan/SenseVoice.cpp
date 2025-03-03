@@ -108,7 +108,7 @@ static void sense_voice_print_usage(int /*argc*/, char **argv, const sense_voice
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n", params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n", params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n", params.use_itn ? "true" : "false");
-    fprintf(stderr, "  -fout      --outfile           [%-s] output file path\n", params.outfile);
+    fprintf(stderr, "  -fout      --outfile           [%s] output file path\n", params.outfile);
     fprintf(stderr, "             --chunk_size        [%-7lu] vad chunk size(ms)\n", params.chunk_size);
     fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7lu] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
     fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7lu] when the first non-silent chunk is too far away\n", params.max_nomute_chunks);
