@@ -42,6 +42,7 @@ struct sense_voice_params {
     std::string openvino_encode_device = "CPU";
     std::vector<std::string> fname_inp = {};
     std::vector<std::string> fname_out = {};
+    std::string outfile = "";
 };
 
 static int sense_voice_has_coreml(void) {
@@ -107,6 +108,7 @@ static void sense_voice_print_usage(int /*argc*/, char **argv, const sense_voice
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n", params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n", params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n", params.use_itn ? "true" : "false");
+    fprintf(stderr, "  -fout      --outfile           [%s] output file path\n", params.outfile.c_str());
     fprintf(stderr, "             --chunk_size        [%-7lu] vad chunk size(ms)\n", params.chunk_size);
     fprintf(stderr, "  -mmc       --min-mute-chunks   [%-7lu] When consecutive chunks are identified as silence\n", params.min_mute_chunks);
     fprintf(stderr, "  -mnc       --max-nomute-chunks [%-7lu] when the first non-silent chunk is too far away\n", params.max_nomute_chunks);
@@ -166,7 +168,7 @@ static bool sense_voice_params_parse(int argc, char **argv, sense_voice_params &
         } else if (arg == "-of" || arg == "--output-file") {
             params.fname_out.emplace_back(argv[++i]);
         } else if (arg == "-np" || arg == "--no-prints") {
-            params.no_prints = false;
+            params.no_prints = true;
         } else if (arg == "-l" || arg == "--language") {
             params.language = sense_voice_param_turn_lowercase(argv[++i]);
         } else if (arg == "--prompt") {
@@ -195,6 +197,8 @@ static bool sense_voice_params_parse(int argc, char **argv, sense_voice_params &
             params.max_batch = std::stoi(argv[++i]);
         } else if (arg == "--chunk_size") {
             params.chunk_size = std::stoi(argv[++i]);
+        } else if (arg == "--outfile" || arg == "-fout") {
+            params.outfile = argv[++i];
         } else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -383,6 +387,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "error: unknown language '%s'\n", params.language.c_str());
         sense_voice_print_usage(argc, argv, params);
         exit(0);
+    }
+
+    if (!params.outfile.empty()) {
+        freopen(params.outfile.c_str(), "w", stdout);
+        params.use_prefix = false;
     }
 
     // sense-voice init
