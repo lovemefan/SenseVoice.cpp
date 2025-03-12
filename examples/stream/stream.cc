@@ -237,6 +237,20 @@ int main(int argc, char** argv)
                 if (isnomute)
                 {
                     if (L_nomute < 0) L_nomute = i;
+
+                    printf("\33[2K\r");
+                    printf("%s", std::string(50, ' ').c_str());
+                    printf("\33[2K\r");
+                    pcmf32_tmp.resize(R_new_chunk - L_nomute);
+                    std::copy(pcmf32.begin() + L_nomute, pcmf32.begin() + R_new_chunk, pcmf32_tmp.begin());
+                    printf("[%.2f-%.2f]", (L_nomute + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0), (R_new_chunk + idenitified_floats) / (SENSE_VOICE_SAMPLE_RATE * 1.0));
+
+                    if (sense_voice_full_parallel(ctx, wparams, pcmf32_tmp, pcmf32_tmp.size(), params.n_processors) != 0) {
+                        fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                        return 10;
+                    }
+
+                    sense_voice_print_output(ctx, params.use_prefix, params.use_itn, true);
                 }
                 else
                 {
