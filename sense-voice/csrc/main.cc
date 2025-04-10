@@ -221,8 +221,8 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         // vad parameters
         else if (arg == "-vt"   || arg == "--threshold")       { params.threshold       = std::stof(argv[++i]); }
         else if (arg == "-vnt"  || arg == "--neg_threshold")   { params.neg_threshold   = std::stof(argv[++i]); }
-        else if (arg == "--min-speech-duration-ms")     { params.min_speech_duration_ms = std::stoi(argv[++i]); }
-        else if (arg == "--max-speech-duration-ms")     { params.max_speech_duration_ms = std::stoi(argv[++i]); }
+        else if (arg == "--min_speech_duration_ms")     { params.min_speech_duration_ms = std::stoi(argv[++i]); }
+        else if (arg == "--max_speech_duration_ms")     { params.max_speech_duration_ms = std::stoi(argv[++i]); }
         else if (arg == "--min_silence_duration_ms")   { params.min_silence_duration_ms = std::stoi(argv[++i]); }
         else if (arg == "--speech_pad_ms")                     { params.speech_pad_ms   = std::stoi(argv[++i]); }
 
