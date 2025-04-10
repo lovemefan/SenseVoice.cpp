@@ -585,6 +585,7 @@ int main(int argc, char ** argv) {
                             // find an endpoint in speech
                             speech_segment.clear();
                             speech_segment.assign(pcmf32.begin() + current_speech_start, pcmf32.begin() + current_speech_end);
+                            printf("[%.2f-%.2f] ", current_speech_start / (sample_rate * 1.0), current_speech_end / (sample_rate * 1.0));
                             if (sense_voice_full_parallel(ctx, wparams, speech_segment, speech_segment.size(), params.n_processors) != 0) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
