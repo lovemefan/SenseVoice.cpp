@@ -72,6 +72,7 @@ struct sense_voice_params {
     bool use_gpu         = true;
     bool flash_attn      = false;
     bool use_itn         = false;
+    bool use_prefix      = false;
 
     std::string language  = "auto";
     std::string prompt;
@@ -149,10 +150,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -tdrz,     --tinydiarize       [%-7s] enable tinydiarize (requires a tdrz model)\n",     params.tinydiarize ? "true" : "false");
     fprintf(stderr, "  -nf,       --no-fallback       [%-7s] do not use temperature fallback while decoding\n", params.no_fallback ? "true" : "false");
     fprintf(stderr, "  -otxt,     --output-txt        [%-7s] output result in a text file\n",                   params.output_txt ? "true" : "false");
-    fprintf(stderr, "  -ovtt,     --output-vtt        [%-7s] output result in a vtt file\n",                    params.output_vtt ? "true" : "false");
     fprintf(stderr, "  -osrt,     --output-srt        [%-7s] output result in a srt file\n",                    params.output_srt ? "true" : "false");
-    fprintf(stderr, "  -olrc,     --output-lrc        [%-7s] output result in a lrc file\n",                    params.output_lrc ? "true" : "false");
-    fprintf(stderr, "  -owts,     --output-words      [%-7s] output script for generating karaoke video\n",     params.output_wts ? "true" : "false");
     fprintf(stderr, "  -ocsv,     --output-csv        [%-7s] output result in a CSV file\n",                    params.output_csv ? "true" : "false");
     fprintf(stderr, "  -oj,       --output-json       [%-7s] output result in a JSON file\n",                   params.output_jsn ? "true" : "false");
     fprintf(stderr, "  -ojf,      --output-json-full  [%-7s] include more information in the JSON file\n",      params.output_jsn_full ? "true" : "false");
@@ -175,6 +173,7 @@ static void sense_voice_print_usage(int /*argc*/, char ** argv, const sense_voic
     fprintf(stderr, "  -ng,       --no-gpu            [%-7s] disable GPU\n",                                    params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,       --flash-attn        [%-7s] flash attention\n",                                params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -itn,      --use-itn           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
+    fprintf(stderr, "  -prefix,      --use-prefix           [%-7s] use itn\n",                                        params.use_itn ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
@@ -265,6 +264,7 @@ static bool sense_voice_params_parse(int argc, char ** argv, sense_voice_params 
         else if (arg == "-fa"   || arg == "--flash-attn")      { params.flash_attn      = true; }
         else if (                  arg == "--grammar-penalty") { params.grammar_penalty = std::stof(argv[++i]); }
         else if (arg == "-itn"  || arg == "--use-itn")         { params.use_itn         = true; }
+        else if (arg == "-prefix"  || arg == "--use-prefix")   { params.use_prefix      = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             sense_voice_print_usage(argc, argv, params);
@@ -590,7 +590,7 @@ int main(int argc, char ** argv) {
                                 fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                 return 10;
                             }
-                            sense_voice_print_output(ctx, true, params.use_itn, false);
+                            sense_voice_print_output(ctx, params.use_prefix, params.use_itn, false);
                             current_speech_end = current_speech_start = 0;
                             if (next_start < prev_end) {
                                 triggered = false;
@@ -639,7 +639,7 @@ int main(int argc, char ** argv) {
                                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                                     return 10;
                                 }
-                                sense_voice_print_output(ctx, true, params.use_itn, false);
+                                sense_voice_print_output(ctx, params.use_prefix, params.use_itn, false);
                                 current_speech_end = current_speech_start = 0;
                             }
                             prev_end = next_start = 0;
@@ -663,7 +663,7 @@ int main(int argc, char ** argv) {
                     fprintf(stderr, "%s: failed to process audio\n", argv[0]);
                     return 10;
                 }
-                sense_voice_print_output(ctx, true, params.use_itn, false);
+                sense_voice_print_output(ctx, true, params.use_prefix, false);
             }
         }
         SENSE_VOICE_LOG_INFO("\n%s: decoder audio use %f s, rtf is %f. \n\n",
