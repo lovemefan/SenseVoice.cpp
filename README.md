@@ -59,6 +59,27 @@ python scripts/convert-pt-to-gguf.py \
 ```
 
 ### 非流式语音识别 silero-vad + sense voice
+
+#### 参数说明
+
+以下列举的参数支持，未列举的暂不支持：
+```bash
+usage: ./bin/sense-voice-main [options] file.wav
+
+options:
+  -t N,      --threads N        [4     ] 解码使用的线程数
+  -l LANG,   --language LANG    [auto  ] 语音代码 ('auto' 为自动检测), 支持 [`zh`, `en`, `yue`, `ja`, `ko`]，分别对应中文、英文、粤语、日语、韩语
+  -m FNAME,  --model FNAME      [models/sense-voice-small-q4_k.gguf] gguf模型路径
+  -f FNAME,  --file FNAME       [      ] wav文件路径， 当前仅支持16k采样率的音频
+  --min_speech_duration_ms      [250   ] vad 参数， 切割音频最小长度，单位毫秒
+  --max_speech_duration_ms      [15000 ] vad 参数， 切割音频最大长度，单位毫秒
+  --min_silence_duration_ms     [100   ] vad 参数，静默最小长度
+  -ng,       --no-gpu           [false ] 不使用GPU
+  -fa,       --flash-attn       [false ] 使用flash attention 解码
+  -itn,      --use-itn          [false ] 使用逆文本正则化，包括标点。
+  -prfix,    --use-prefix       [false ] 输出语种、情感、事件、是否itn
+ ```
+#### 使用
 ```bash
 
 git clone https://github.com/lovemefan/SenseVoice.cpp
@@ -74,40 +95,78 @@ cmake -DCMAKE_BUILD_TYPE=Release .. && make -j 8
 
 ### 输出
 
-当前使用sense-voice-f16模型输出
+以下是使用sense-voice-q4_k模型在Macbook M1上输出:
 
 ```
-$./bin/sense-voice-main -m /data/code/SenseVoice.cpp/scripts/resources/gguf-fp16-sense-voice.bin /data/code/SenseVoice.cpp/scripts/resources/SenseVoiceSmall/example/asr_example_zh.wav  -t 4
+$ ./bin/sense-voice-main -m /Users/Code/cpp-project/SenseVoice.cpp/scripts/resources/SenseVoiceGGUF/sense-voice-small-q4_k.gguf /Users/Downloads/asr_example_zh.wav  -t 1 -l auto -itn -prefix
 
-sense_voice_small_init_from_file_with_params_no_state: loading model from '/data/code/SenseVoice.cpp/scripts/resources/gguf-fp16-sense-voice-small.bin'     
-sense_voice_model_load: version:      3                                                                                                                     
-sense_voice_model_load: alignment:   32 
-sense_voice_model_load: data offset: 444480                                                                                                     
-sense_voice_model_load: loading model                                                                                                                       
-sense_voice_model_load: n_vocab = 25055                                                                                                                     
-sense_voice_model_load: n_encoder_hidden_state = 512                                                                                                        
-sense_voice_model_load: n_encoder_linear_units = 2048                                                                                                       
-sense_voice_model_load: n_encoder_attention_heads  = 4                                                                                                      
-sense_voice_model_load: n_encoder_layers = 50                                                                                                               
-sense_voice_model_load: n_mels  = 80                                                                                                                        
-sense_voice_model_load: ftype  = 1                                                                                                                          
-sense_voice_model_load: vocab[25055] loaded 
-sense_voice_model_load: CPU total size =   468.98 MB
-sense_voice_model_load: n_tensors: 1197
-sense_voice_model_load: load SenseVoiceSmall takes 0.213000 second 
-sense_voice_init_state: compute buffer (encoder)   =   50.40 MB
-sense_voice_init_state: compute buffer (decoder)   =   13.72 MB
+sense_voice_small_init_from_file_with_params_no_state: loading model from '/Users/Code/cpp-project/SenseVoice.cpp/scripts/resources/SenseVoiceGGUF/sense-voice-small-q4_k.gguf'
+sense_voice_init_with_params_no_state: use gpu    = 1
+sense_voice_init_with_params_no_state: flash attn = 0
+sense_voice_init_with_params_no_state: gpu_device = 0
+sense_voice_init_with_params_no_state: devices    = 3
+sense_voice_init_with_params_no_state: backends   = 3
+sense_voice_model_load: version:      3
+sense_voice_model_load: alignment:   32
+sense_voice_model_load: data offset: 423680
+sense_voice_model_load: loading model
+sense_voice_model_load: n_vocab = 25055
+sense_voice_model_load: n_encoder_hidden_state = 512
+sense_voice_model_load: n_encoder_linear_units = 2048
+sense_voice_model_load: n_encoder_attention_heads  = 4
+sense_voice_model_load: n_encoder_layers = 50
+sense_voice_model_load: n_mels  = 80
+sense_voice_model_load: ftype  = 12
+sense_voice_model_load: vocab[25055] loaded
+sense_voice_default_buffer_type: using device Metal (Apple M1 Pro)
+sense_voice_model_load: Metal total size =   181.86 MB
+sense_voice_model_load: n_tensors: 1212
+sense_voice_model_load: load SenseVoiceSmall takes 0.338000 second 
+sense_voice_backend_init_gpu: using Metal backend
+ggml_metal_init: allocating
+ggml_metal_init: found device: Apple M1 Pro
+ggml_metal_init: picking default device: Apple M1 Pro
+ggml_metal_init: using embedded metal library
+ggml_metal_init: GPU name:   Apple M1 Pro
+ggml_metal_init: GPU family: MTLGPUFamilyApple7  (1007)
+ggml_metal_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_init: GPU family: MTLGPUFamilyMetal3  (5001)
+...
+sense_voice_backend_init: using BLAS backend
+sense_voice_backend_init: using CPU backend
+sense_voice_init_state: kv pad  size  =    3.67 MB
+sense_voice_init_state: compute buffer (encoder)   =    3.09 MB
+sense_voice_init_state: compute buffer (encoder)   =   17.53 MB
+sense_voice_init_state: compute buffer (decoder)   =    7.99 MB
 
-system_info: n_threads = 4 / 256 | AVX = 1 | AVX2 = 1 | AVX512 = 0 | FMA = 1 | NEON = 0 | ARM_FMA = 0 | METAL = 0 | F16C = 1 | FP16_VA = 0 | WASM_SIMD = 0 | BLAS = 0 | SSE3 = 1 | SSSE3 = 1 | VSX = 0 | CUDA = 0 | COREML = 0 | OPENVINO = 0
+system_info: n_threads = 1 / 8 | AVX = 0 | AVX2 = 0 | AVX512 = 0 | FMA = 0 | NEON = 1 | ARM_FMA = 1 | F16C = 0 | FP16_VA = 1 | WASM_SIMD = 0 | SSE3 = 0 | SSSE3 = 0 | VSX = 0 | COREML = 0 | OPENVINO = 0
 
-main: processing audio (88747 samples, 5.54669 sec) , 4 threads, 1 processors, lang = auto...
+main: processing audio (88747 samples, 5.54669 sec) , 1 threads, 1 processors, lang = auto...
 
-sense_voice_pcm_to_feature_with_state: calculate fbank and cmvn takes 7.207 ms
-<|zh|><|NEUTRAL|><|Speech|><|withitn|>欢迎大家来体验达摩院推出的语音识别模型。
-sense_voice_full_with_state: decoder audio use 1.011289 s, rtf is 0.182323.
+[0.96-5.18] <|zh|><|NEUTRAL|><|Speech|><|withitn|>欢迎大家来体验达摩院推出的语音识别模型。
+
+main: decoder audio use 0.103725 s, rtf is 0.018700. 
 ```
 ### 流式语音识别识别
+流式的vad是基于信号处理实现的，区别于非流式的vad是使用模型实现的
+```bash
+usage: ./bin/sense-voice-stream [options]
 
+options:
+  -t N,     --threads N         [4      ] [SenseVoice] 解码使用的线程数
+            --chunk_size        [100    ] vad chunk 大小(单位ms)
+  -mmc      --min-mute-chunks   [10     ] 静音片段最小chunk数量
+  -mnc      --max-nomute-chunks [80     ] 最大非静音chunk数量
+            --use-vad           [false  ] 是否使用vad
+            --use-prefix        [false  ] 是否使用 sensevoice的额外信息（语种、情感、事件、是否itn）
+  -c ID,    --capture ID        [-1     ] [Device] capture device ID
+  -l LANG,  --language LANG     [auto   ] [SenseVoice] 语音代码 ('auto' 为自动检测), 支持 [`zh`, `en`, `yue`, `ja`, `ko`]，分别对应中文、英文、粤语、日语、韩语
+  -m FNAME, --model FNAME       [models/sense-voice-small-q4_k.gguf] [SenseVoice] 模型路径
+  -ng,      --no-gpu           [false ] 不使用GPU
+  -fa,      --flash-attn       [false ] 使用flash attention 解码
+  -itn,     --use-itn          [false ] 使用逆文本正则化，包括标点。
+ 
+```
 
 ```bash
 sudo apt install libsdl2-dev
